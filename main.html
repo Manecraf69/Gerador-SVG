@@ -234,11 +234,11 @@
         </div>
 
         <div class="buttons">
-          <button id="addShapeBtn" class="primary">Adicionar</button>
-          <button id="undoBtn" class="secondary">Voltar</button>
-          <button id="redoBtn" class="secondary">Avançar</button>
-          <button id="loadDemoBtn" class="secondary">Carregar exemplo</button>
-          <button id="clearAllBtn" class="danger">Limpar tudo</button>
+          <button type="button" id="addShapeBtn" class="primary">Adicionar</button>
+          <button type="button" id="undoBtn" class="secondary">Voltar</button>
+          <button type="button" id="redoBtn" class="secondary">Avançar</button>
+          <button type="button" id="loadDemoBtn" class="secondary">Carregar exemplo</button>
+          <button type="button" id="clearAllBtn" class="danger">Limpar tudo</button>
         </div>
       </section>
 
@@ -294,7 +294,7 @@
             </div>
           </div>
 
-          <div class="buttons"><button id="applyEditBtn" class="primary">Aplicar edição</button></div>
+          <div class="buttons"><button type="button" id="applyEditBtn" class="primary">Aplicar edição</button></div>
           <div class="mini-note">Você também pode arrastar os pontos azuis direto no plano para reposicionar a forma.</div>
         </div>
       </section>
@@ -306,7 +306,8 @@
         <div class="field"><label><input id="toggleAxes" type="checkbox" checked> Mostrar eixos</label></div>
         <div class="field"><label><input id="toggleCoords" type="checkbox" checked> Mostrar coordenadas</label></div>
         <div class="field"><label><input id="togglePoints" type="checkbox" checked> Mostrar pontos</label></div>
-        <button id="copySvgBtn" class="secondary">Copiar SVG</button>
+        <button type="button" id="downloadSvgBtn" class="secondary">Baixar SVG</button>
+        <button type="button" id="copySvgBtn" class="secondary">Copiar SVG</button>
       </section>
 
       <section class="viewer-stage">
@@ -322,7 +323,7 @@
   </div>
 
   <script>
-    const state = { svgWidth: 900, svgHeight: 600, gridStep: 25, shapes: [], selectedId: null, history: [], future: [], drag: null, snapCandidate: null };
+    const state = { svgWidth: 900, svgHeight: 600, gridStep: 25, shapes: [], selectedId: null, selectedPoint: null, history: [], future: [], drag: null, snapCandidate: null };
     const $ = (selector) => document.querySelector(selector);
     const svgPreview = $("#svgPreview");
     const svgCode = $("#svgCode");
@@ -342,6 +343,7 @@
       state.shapes = shapes;
       if (keepSelection && state.selectedId && state.shapes.some((shape) => shape.id === state.selectedId)) return;
       state.selectedId = state.shapes[0]?.id ?? null;
+      state.selectedPoint = null;
     }
     function commitHistory() {
       state.history.push(cloneShapes());
@@ -431,8 +433,13 @@
         case "ellipse": return `<ellipse data-shape-id="${shape.id}" cx="${shape.cx}" cy="${shape.cy}" rx="${shape.rx}" ry="${shape.ry}" ${attrs}${extra} />`;
         case "polygon": return `<polygon data-shape-id="${shape.id}" points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}" ${attrs}${extra} />`;
         case "polyline": return `<polyline data-shape-id="${shape.id}" points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}" ${attrs} fill="none"${extra} />`;
-        case "graph":
-          return shape.edges.map(([a, b]) => `<line data-shape-id="${shape.id}" x1="${shape.points[a].x}" y1="${shape.points[a].y}" x2="${shape.points[b].x}" y2="${shape.points[b].y}" ${attrs} fill="none"${extra} />`).join("");
+        case "graph": {
+          const loops = shape.fill === "none" ? [] : getGraphFillLoops(shape);
+          const fillMarkup = loops.map((loop) => `<polygon data-shape-id="${shape.id}" points="${loop.map((p) => `${p.x},${p.y}`).join(" ")}" fill="${shape.fill}" stroke="none" opacity="${shape.opacity}"${extra} />`).join("");
+          const edgeAttrs = `stroke="${shape.stroke}" stroke-width="${shape.strokeWidth}" opacity="${shape.opacity}"`;
+          const edgeMarkup = shape.edges.map(([a, b]) => `<line data-shape-id="${shape.id}" x1="${shape.points[a].x}" y1="${shape.points[a].y}" x2="${shape.points[b].x}" y2="${shape.points[b].y}" ${edgeAttrs} fill="none"${extra} />`).join("");
+          return `${fillMarkup}${edgeMarkup}`;
+        }
         default: return "";
       }
     }
@@ -522,7 +529,7 @@
         } else if (draft.type === "polyline") {
           draft.points = parsePoints($("#editPointsInput").value); draft.fill = "none";
         } else if (draft.type === "graph") {
-          draft.points = parsePoints($("#editPointsInput").value);
+          draft.fill = $("#editFillColor").value;
         }
         return draft;
       });
@@ -585,6 +592,145 @@
     function pointKey(point) {
       return `${point.x},${point.y}`;
     }
+    function polygonArea(points) {
+      let area = 0;
+      for (let i = 0; i < points.length; i += 1) {
+        const current = points[i];
+        const next = points[(i + 1) % points.length];
+        area += (current.x * next.y) - (next.x * current.y);
+      }
+      return area / 2;
+    }
+    function getGraphFillLoops(shape) {
+      if (!shape || shape.type !== "graph" || !shape.points || !shape.edges) return [];
+      const adjacency = new Map(shape.points.map((_, index) => [index, new Set()]));
+      const edgeKeys = new Set();
+      for (const [a, b] of shape.edges) {
+        if (!Number.isInteger(a) || !Number.isInteger(b) || a === b || !adjacency.has(a) || !adjacency.has(b)) continue;
+        const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+        if (edgeKeys.has(key)) continue;
+        edgeKeys.add(key);
+        adjacency.get(a).add(b);
+        adjacency.get(b).add(a);
+      }
+      if (!edgeKeys.size) return [];
+
+      const discovery = new Map();
+      const low = new Map();
+      const parent = new Map();
+      const bridges = new Set();
+      let time = 0;
+
+      function dfsBridge(node) {
+        time += 1;
+        discovery.set(node, time);
+        low.set(node, time);
+        for (const neighbor of adjacency.get(node)) {
+          if (!discovery.has(neighbor)) {
+            parent.set(neighbor, node);
+            dfsBridge(neighbor);
+            low.set(node, Math.min(low.get(node), low.get(neighbor)));
+            if (low.get(neighbor) > discovery.get(node)) {
+              const bridgeKey = node < neighbor ? `${node}|${neighbor}` : `${neighbor}|${node}`;
+              bridges.add(bridgeKey);
+            }
+          } else if (parent.get(node) !== neighbor) {
+            low.set(node, Math.min(low.get(node), discovery.get(neighbor)));
+          }
+        }
+      }
+
+      for (const node of adjacency.keys()) {
+        if (!discovery.has(node)) dfsBridge(node);
+      }
+
+      const cycleEdges = [...edgeKeys].filter((edge) => !bridges.has(edge));
+      if (!cycleEdges.length) return [];
+
+      const coreAdj = new Map(shape.points.map((_, index) => [index, new Set()]));
+      for (const edge of cycleEdges) {
+        const [a, b] = edge.split("|").map(Number);
+        coreAdj.get(a).add(b);
+        coreAdj.get(b).add(a);
+      }
+
+      function canonicalCycle(nodes) {
+        if (!nodes.length) return "";
+        const forward = [];
+        const backward = [];
+        for (let i = 0; i < nodes.length; i += 1) {
+          forward.push(nodes[i]);
+          backward.push(nodes[nodes.length - 1 - i]);
+        }
+        function bestRotation(list) {
+          let best = null;
+          for (let i = 0; i < list.length; i += 1) {
+            const rotated = [...list.slice(i), ...list.slice(0, i)];
+            const key = rotated.join("|");
+            if (!best || key < best) best = key;
+          }
+          return best;
+        }
+        const a = bestRotation(forward);
+        const b = bestRotation(backward);
+        return a < b ? a : b;
+      }
+
+      function isChordless(cycleNodes) {
+        const size = cycleNodes.length;
+        if (size < 3) return false;
+        const pos = new Map(cycleNodes.map((node, index) => [node, index]));
+        for (let i = 0; i < size; i += 1) {
+          const a = cycleNodes[i];
+          for (const b of coreAdj.get(a)) {
+            if (!pos.has(b)) continue;
+            const j = pos.get(b);
+            const adjacent = Math.abs(i - j) === 1 || Math.abs(i - j) === size - 1;
+            if (!adjacent) return false;
+          }
+        }
+        return true;
+      }
+
+      const uniqueCycles = new Map();
+      const nodesWithCycleEdges = [...coreAdj.entries()].filter(([, n]) => n.size > 0).map(([idx]) => idx).sort((a, b) => a - b);
+      const maxCycleLen = Math.min(nodesWithCycleEdges.length, 24);
+
+      function dfsCycle(start, current, path, used) {
+        if (path.length > maxCycleLen) return;
+        for (const next of coreAdj.get(current)) {
+          if (next < start) continue;
+          if (next === start) {
+            if (path.length >= 3) {
+              const cycle = [...path];
+              const key = canonicalCycle(cycle);
+              if (!uniqueCycles.has(key)) uniqueCycles.set(key, cycle);
+            }
+            continue;
+          }
+          if (used.has(next)) continue;
+          used.add(next);
+          path.push(next);
+          dfsCycle(start, next, path, used);
+          path.pop();
+          used.delete(next);
+        }
+      }
+
+      for (const start of nodesWithCycleEdges) {
+        const used = new Set([start]);
+        dfsCycle(start, start, [start], used);
+      }
+
+      const loops = [];
+      for (const cycle of uniqueCycles.values()) {
+        if (!isChordless(cycle)) continue;
+        const points = cycle.map((index) => shape.points[index]);
+        if (Math.abs(polygonArea(points)) < 0.5) continue;
+        loops.push(points);
+      }
+      return loops;
+    }
     function shapeToSegments(shape) {
       const pointShape = toPointShape(shape);
       if (!pointShape) return null;
@@ -602,6 +748,78 @@
         edges.push([pointShape.points[pointShape.points.length - 1], pointShape.points[0]]);
       }
       return { pointShape, edges };
+    }
+    function deletePointFromShape(shape, index) {
+      const pointShape = toPointShape(shape);
+      if (!pointShape) return null;
+      if (!Number.isInteger(index) || index < 0) return structuredClone(shape);
+
+      if (pointShape.type === "graph") {
+        if (!pointShape.points[index]) return pointShape;
+        const neighbors = [];
+        const remainingEdges = [];
+        for (const [a, b] of pointShape.edges) {
+          if (a === index || b === index) {
+            neighbors.push(a === index ? b : a);
+            continue;
+          }
+          remainingEdges.push([a, b]);
+        }
+        if (neighbors.length === 2 && neighbors[0] !== neighbors[1]) {
+          const key = [neighbors[0], neighbors[1]].sort().join("|");
+          const hasEdge = remainingEdges.some(([a, b]) => [a, b].sort().join("|") === key);
+          if (!hasEdge) remainingEdges.push([neighbors[0], neighbors[1]]);
+        }
+        const points = pointShape.points.filter((_, i) => i !== index);
+        const edges = remainingEdges
+          .filter(([a, b]) => a !== index && b !== index)
+          .map(([a, b]) => [a > index ? a - 1 : a, b > index ? b - 1 : b])
+          .filter(([a, b]) => a !== b && points[a] && points[b]);
+        const segments = edges.map(([a, b]) => [points[a], points[b]]);
+        if (!segments.length) return null;
+        return rebuildShapeFromSegments(segments, pointShape);
+      }
+
+      if (!pointShape.points[index]) return pointShape;
+      pointShape.points = pointShape.points.filter((_, i) => i !== index);
+      if (pointShape.points.length < 2) return null;
+      return normalizePointShape(pointShape);
+    }
+    function deleteSelectedPoint() {
+      const selectedPoint = state.selectedPoint;
+      if (!selectedPoint) return false;
+      const target = state.shapes.find((shape) => shape.id === selectedPoint.shapeId);
+      if (!target || !isVertexHandle(selectedPoint.handle)) return false;
+      const index = getHandleIndex(target, selectedPoint.handle);
+      if (!Number.isInteger(index)) return false;
+
+      commitHistory();
+      const nextShapes = [];
+      for (const shape of state.shapes) {
+        if (shape.id !== selectedPoint.shapeId) {
+          nextShapes.push(shape);
+          continue;
+        }
+        const updated = deletePointFromShape(shape, index);
+        if (updated) nextShapes.push(updated);
+      }
+      setShapes(nextShapes, false);
+      state.selectedPoint = null;
+      if (!state.shapes.some((shape) => shape.id === state.selectedId)) {
+        state.selectedId = state.shapes[0]?.id ?? null;
+      }
+      refresh();
+      return true;
+    }
+    function resolveMergeStyle(primaryStyle, secondaryStyle = null) {
+      const fallbackFill = $("#fillColor").value || "#000000";
+      const fill = [primaryStyle?.fill, secondaryStyle?.fill].find((value) => value && value !== "none") || fallbackFill;
+      return {
+        fill,
+        stroke: primaryStyle?.stroke ?? secondaryStyle?.stroke ?? "#000000",
+        strokeWidth: primaryStyle?.strokeWidth ?? secondaryStyle?.strokeWidth ?? 2,
+        opacity: primaryStyle?.opacity ?? secondaryStyle?.opacity ?? 1
+      };
     }
     function rebuildShapeFromSegments(segments, baseStyle) {
       const uniqueEdges = [];
@@ -643,7 +861,7 @@
           type: "graph",
           points,
           edges,
-          fill: "none",
+          fill: baseStyle.fill,
           stroke: baseStyle.stroke,
           strokeWidth: baseStyle.strokeWidth,
           opacity: baseStyle.opacity
@@ -725,12 +943,13 @@
       if (sourceShape.id === best.shape.id) {
         const segmentData = shapeToSegments(sourceShape);
         if (!segmentData) return false;
+        const mergeStyle = resolveMergeStyle(segmentData.pointShape);
         const normalized = rebuildShapeFromSegments(
           segmentData.edges.map(([a, b]) => [
             samePoint(a, sourcePoint) || samePoint(a, best.point) ? { x: best.point.x, y: best.point.y } : a,
             samePoint(b, sourcePoint) || samePoint(b, best.point) ? { x: best.point.x, y: best.point.y } : b
           ]),
-          segmentData.pointShape
+          mergeStyle
         );
         if (!normalized) return false;
         const nextShapes = structuredClone(state.shapes);
@@ -748,7 +967,8 @@
         samePoint(a, sourcePoint) || samePoint(a, best.point) ? { x: best.point.x, y: best.point.y } : a,
         samePoint(b, sourcePoint) || samePoint(b, best.point) ? { x: best.point.x, y: best.point.y } : b
       ]);
-      const normalized = rebuildShapeFromSegments(mergedSegments, sourceSegments.pointShape);
+      const mergeStyle = resolveMergeStyle(sourceSegments.pointShape, targetSegments.pointShape);
+      const normalized = rebuildShapeFromSegments(mergedSegments, mergeStyle);
       if (!normalized) return false;
       const nextShapes = state.shapes.filter((shape) => shape.id !== sourceShape.id && shape.id !== best.shape.id);
       nextShapes.push(normalized);
@@ -802,9 +1022,13 @@
         return getShapePoints(shape).map((point) => {
           const isSnapPoint = state.snapCandidate && state.snapCandidate.shape.id === shape.id && state.snapCandidate.point.handle === point.handle;
           if (!isSelected && !isSnapPoint) return "";
-          const radius = point.handle === "move" ? 7 : 6;
+          const isPointSelected = state.selectedPoint && state.selectedPoint.shapeId === shape.id && state.selectedPoint.handle === point.handle;
+          const baseRadius = point.handle === "move" ? 7 : 6;
+          const radius = isPointSelected ? baseRadius + 1.5 : baseRadius;
           const fill = isSnapPoint ? "#2fb56f" : point.handle === "move" ? "#ff8f3d" : "#b14d24";
-          const handle = showPoints ? `<circle data-shape-id="${shape.id}" data-handle="${point.handle}" cx="${point.x}" cy="${point.y}" r="${radius}" fill="${fill}" stroke="#fff" stroke-width="1.5" style="cursor: pointer;" />` : "";
+          const stroke = isPointSelected ? "#ffe08a" : "#fff";
+          const strokeWidth = isPointSelected ? 2.6 : 1.5;
+          const handle = showPoints ? `<circle data-shape-id="${shape.id}" data-handle="${point.handle}" cx="${point.x}" cy="${point.y}" r="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" style="cursor: pointer;" />` : "";
           const label = showCoords ? `<text x="${point.x + 8}" y="${point.y - 8}" font-size="12" fill="#2e2418">${point.label} (${point.x}, ${point.y})</text>` : "";
           return `${handle}${label}`;
         }).join("");
@@ -839,8 +1063,15 @@
       point.y = event.clientY;
       return point.matrixTransform(svgPreview.getScreenCTM().inverse());
     }
-    function limitPoint(rawPoint) {
-      return { x: Math.max(0, Math.min(state.svgWidth, Math.round(rawPoint.x))), y: Math.max(0, Math.min(state.svgHeight, Math.round(rawPoint.y))) };
+    function limitPoint(rawPoint, snapToGrid = false) {
+      let x = Math.round(rawPoint.x);
+      let y = Math.round(rawPoint.y);
+      if (snapToGrid) {
+        const step = Math.max(5, state.gridStep || 25);
+        x = Math.round(x / step) * step;
+        y = Math.round(y / step) * step;
+      }
+      return { x: Math.max(0, Math.min(state.svgWidth, x)), y: Math.max(0, Math.min(state.svgHeight, y)) };
     }
     function moveShape(shape, dx, dy) {
       if (shape.type === "line") {
@@ -855,8 +1086,8 @@
         shape.points = shape.points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
       }
     }
-    function applyHandleMove(shape, handle, rawPoint) {
-      const point = limitPoint(rawPoint);
+    function applyHandleMove(shape, handle, rawPoint, snapToGrid = false) {
+      const point = limitPoint(rawPoint, snapToGrid);
       if (shape.type === "line") {
         if (handle === "move") {
           const current = getShapePoints(shape).find((item) => item.handle === "move");
@@ -924,6 +1155,7 @@
       if (!item) return;
       event.preventDefault();
       state.selectedId = item.dataset.selectId;
+      state.selectedPoint = null;
       refresh();
     });
 
@@ -955,6 +1187,9 @@
       if (handleNode) {
         event.preventDefault();
         state.selectedId = handleNode.dataset.shapeId;
+        state.selectedPoint = isVertexHandle(handleNode.dataset.handle)
+          ? { shapeId: handleNode.dataset.shapeId, handle: handleNode.dataset.handle }
+          : null;
         commitHistory();
         state.drag = { shapeId: handleNode.dataset.shapeId, handle: handleNode.dataset.handle };
         refresh();
@@ -965,12 +1200,14 @@
       if (shapeNode) {
         event.preventDefault();
         state.selectedId = shapeNode.dataset.shapeId;
+        state.selectedPoint = null;
         refresh();
         return;
       }
 
       if (!state.drag) {
         state.selectedId = null;
+        state.selectedPoint = null;
         refresh();
       }
     });
@@ -978,13 +1215,14 @@
     svgPreview.addEventListener("pointermove", (event) => {
       if (!state.drag) return;
       updateShapeById(state.drag.shapeId, (shape) => {
-        applyHandleMove(shape, state.drag.handle, getSvgPoint(event));
+        applyHandleMove(shape, state.drag.handle, getSvgPoint(event), event.ctrlKey);
         return shape;
       });
       state.snapCandidate = getMergeCandidateForCurrentDrag();
       refresh();
     });
     window.addEventListener("pointerup", () => {
+      if (!state.drag) return;
       const merged = tryMergeAtDragEnd();
       state.drag = null;
       state.snapCandidate = null;
@@ -1019,6 +1257,19 @@
         alert("Não consegui copiar automaticamente. Você pode copiar manualmente no bloco abaixo.");
       }
     });
+    $("#downloadSvgBtn").addEventListener("click", () => {
+      const svgText = svgCode.textContent;
+      const blob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `desenho-${stamp}.svg`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
 
     shapeType.addEventListener("change", syncCreateFieldVisibility);
     ["#svgWidth", "#svgHeight", "#gridStep"].forEach((selector) => {
@@ -1051,9 +1302,11 @@
       }
       if (!editingText && event.key === "Delete" && state.selectedId) {
         event.preventDefault();
+        if (deleteSelectedPoint()) return;
         commitHistory();
         state.shapes = state.shapes.filter((shape) => shape.id !== state.selectedId);
         state.selectedId = state.shapes[0]?.id ?? null;
+        state.selectedPoint = null;
         refresh();
       }
     });
