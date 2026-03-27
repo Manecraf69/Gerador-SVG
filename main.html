@@ -75,6 +75,21 @@
       border-radius: 12px;
       padding: 10px 12px;
     }
+    input[type="color"] {
+      padding: 6px;
+      height: 42px;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch {
+      border: 0;
+      border-radius: 8px;
+    }
+    input[type="color"]::-moz-color-swatch {
+      border: 0;
+      border-radius: 8px;
+    }
     textarea { min-height: 78px; resize: vertical; }
     .buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
     button {
@@ -211,8 +226,8 @@
           </div>
 
           <div class="style-grid full">
-            <div class="field"><label for="fillColor">Preenchimento</label><input id="fillColor" type="color" value="#f4b183"></div>
             <div class="field"><label for="strokeColor">Borda</label><input id="strokeColor" type="color" value="#8a3d1e"></div>
+            <div class="field"><label for="fillColor">Preenchimento</label><input id="fillColor" type="color" value="#f4b183"></div>
             <div class="field"><label for="strokeWidth">Espessura</label><input id="strokeWidth" type="number" min="1" value="3"></div>
             <div class="field"><label for="shapeOpacity">Opacidade</label><input id="shapeOpacity" type="number" min="0" max="1" step="0.1" value="0.85"></div>
           </div>
@@ -272,8 +287,8 @@
             </div>
 
             <div class="style-grid full">
-              <div class="field"><label for="editFillColor">Preenchimento</label><input id="editFillColor" type="color"></div>
               <div class="field"><label for="editStrokeColor">Borda</label><input id="editStrokeColor" type="color"></div>
+              <div class="field"><label for="editFillColor">Preenchimento</label><input id="editFillColor" type="color"></div>
               <div class="field"><label for="editStrokeWidth">Espessura</label><input id="editStrokeWidth" type="number" min="1"></div>
               <div class="field"><label for="editShapeOpacity">Opacidade</label><input id="editShapeOpacity" type="number" min="0" max="1" step="0.1"></div>
             </div>
