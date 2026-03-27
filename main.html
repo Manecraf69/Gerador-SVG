@@ -1,0 +1,1057 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gerador e Visualizador SVG</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: #fffaf2;
+      --panel-strong: #f0e5d2;
+      --line: #d3b98c;
+      --text: #2e2418;
+      --muted: #6f604c;
+      --accent: #b14d24;
+      --accent-2: #1b6b73;
+      --danger: #8d2f2f;
+      --shadow: 0 18px 50px rgba(60, 41, 16, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(177, 77, 36, 0.10), transparent 35%),
+        radial-gradient(circle at bottom right, rgba(27, 107, 115, 0.12), transparent 28%),
+        var(--bg);
+      color: var(--text);
+    }
+    .app {
+      width: min(1400px, calc(100% - 32px));
+      margin: 20px auto;
+      display: grid;
+      grid-template-columns: 420px minmax(0, 1fr);
+      gap: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(122, 92, 48, 0.18);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - 40px);
+    }
+    .section {
+      padding: 18px;
+      border-bottom: 1px solid rgba(122, 92, 48, 0.14);
+    }
+    .section:last-child { border-bottom: 0; }
+    h1, h2, h3 { margin: 0 0 10px; line-height: 1.1; }
+    h1 { font-size: 1.6rem; }
+    h2 { font-size: 1.05rem; }
+    p { margin: 0; color: var(--muted); }
+    .controls-grid, .canvas-grid, .style-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .canvas-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field.full { grid-column: 1 / -1; }
+    label { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+    input, select, textarea, button { font: inherit; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid rgba(122, 92, 48, 0.24);
+      background: #fff;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    textarea { min-height: 78px; resize: vertical; }
+    .buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: transform 0.16s ease, opacity 0.16s ease, background 0.16s ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    .primary { background: var(--accent); color: #fff; }
+    .secondary { background: var(--panel-strong); color: var(--text); }
+    .danger { background: #f7dddd; color: var(--danger); }
+    .shape-list {
+      display: flex; flex-direction: column; gap: 10px; max-height: 300px; overflow: auto; padding-right: 4px;
+    }
+    .shape-item {
+      border: 1px solid rgba(122, 92, 48, 0.22);
+      border-radius: 16px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.8);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+      cursor: pointer;
+    }
+    .shape-item:hover { transform: translateY(-1px); }
+    .shape-item.selected {
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px rgba(177, 77, 36, 0.18);
+      background: #fff4eb;
+    }
+    .shape-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;
+    }
+    .shape-meta { font-size: 0.84rem; color: var(--muted); }
+    .shape-actions { display: flex; gap: 8px; }
+    .shape-actions button { padding: 7px 10px; border-radius: 10px; font-size: 0.84rem; }
+    .viewer {
+      display: grid; grid-template-rows: auto 1fr auto; min-height: calc(100vh - 40px);
+    }
+    .viewer-top {
+      padding: 18px; display: flex; flex-wrap: wrap; align-items: end; gap: 14px; border-bottom: 1px solid rgba(122, 92, 48, 0.14);
+    }
+    .viewer-top .field { min-width: 110px; }
+    .viewer-stage { padding: 18px; min-height: 0; }
+    .svg-wrap {
+      width: 100%; height: 100%; min-height: 540px; border: 1px solid rgba(122, 92, 48, 0.22); border-radius: 22px; overflow: auto;
+      background: linear-gradient(180deg, #fffdf9, #f7efdf); position: relative;
+    }
+    #svgPreview { width: auto; height: auto; display: block; touch-action: none; user-select: none; max-width: none; max-height: none; }
+    .viewer-bottom { padding: 18px; border-top: 1px solid rgba(122, 92, 48, 0.14); }
+    .code-box {
+      width: 100%; min-height: 180px; border-radius: 16px; border: 1px solid rgba(122, 92, 48, 0.2); background: #fff;
+      padding: 12px; font-family: Consolas, monospace; font-size: 0.9rem; white-space: pre; overflow: auto;
+    }
+    .hint { margin-top: 8px; font-size: 0.84rem; color: var(--muted); }
+    .hidden { display: none; }
+    .subtle-box {
+      border: 1px dashed rgba(122, 92, 48, 0.24); border-radius: 16px; padding: 12px; background: rgba(255, 255, 255, 0.45); color: var(--muted);
+    }
+    .mini-note { font-size: 0.83rem; color: var(--muted); margin-top: 8px; }
+    @media (max-width: 1100px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar, .viewer { min-height: auto; }
+      .svg-wrap { min-height: 440px; }
+    }
+    @media (max-width: 640px) {
+      .controls-grid, .canvas-grid, .style-grid, .viewer-top { grid-template-columns: 1fr; }
+      .app { width: min(100% - 18px, 1400px); margin: 9px auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="panel sidebar">
+      <section class="section">
+        <h1>Gerador SVG</h1>
+        <p>Crie figuras, linhas e polígonos, veja as coordenadas dos pontos e copie o SVG pronto.</p>
+      </section>
+
+      <section class="section">
+        <h2>Canvas</h2>
+        <div class="canvas-grid">
+          <div class="field"><label for="svgWidth">Largura</label><input id="svgWidth" type="number" min="100" value="900"></div>
+          <div class="field"><label for="svgHeight">Altura</label><input id="svgHeight" type="number" min="100" value="600"></div>
+          <div class="field"><label for="gridStep">Grade</label><input id="gridStep" type="number" min="5" value="25"></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Novo elemento</h2>
+        <div class="controls-grid">
+          <div class="field full">
+            <label for="shapeType">Tipo</label>
+            <select id="shapeType">
+              <option value="line">Linha</option>
+              <option value="rect">Retângulo</option>
+              <option value="circle">Círculo</option>
+              <option value="ellipse">Elipse</option>
+              <option value="polygon">Polígono</option>
+              <option value="polyline">Polilinha</option>
+            </select>
+          </div>
+
+          <div id="lineFields" class="controls-grid field-group full">
+            <div class="field"><label for="x1">x1</label><input id="x1" type="number" value="80"></div>
+            <div class="field"><label for="y1">y1</label><input id="y1" type="number" value="80"></div>
+            <div class="field"><label for="x2">x2</label><input id="x2" type="number" value="280"></div>
+            <div class="field"><label for="y2">y2</label><input id="y2" type="number" value="180"></div>
+          </div>
+
+          <div id="rectFields" class="controls-grid field-group full hidden">
+            <div class="field"><label for="rectX">x</label><input id="rectX" type="number" value="120"></div>
+            <div class="field"><label for="rectY">y</label><input id="rectY" type="number" value="100"></div>
+            <div class="field"><label for="rectWidth">largura</label><input id="rectWidth" type="number" value="220"></div>
+            <div class="field"><label for="rectHeight">altura</label><input id="rectHeight" type="number" value="140"></div>
+          </div>
+
+          <div id="circleFields" class="controls-grid field-group full hidden">
+            <div class="field"><label for="circleCx">cx</label><input id="circleCx" type="number" value="220"></div>
+            <div class="field"><label for="circleCy">cy</label><input id="circleCy" type="number" value="160"></div>
+            <div class="field"><label for="circleR">raio</label><input id="circleR" type="number" value="90"></div>
+          </div>
+
+          <div id="ellipseFields" class="controls-grid field-group full hidden">
+            <div class="field"><label for="ellipseCx">cx</label><input id="ellipseCx" type="number" value="240"></div>
+            <div class="field"><label for="ellipseCy">cy</label><input id="ellipseCy" type="number" value="180"></div>
+            <div class="field"><label for="ellipseRx">rx</label><input id="ellipseRx" type="number" value="130"></div>
+            <div class="field"><label for="ellipseRy">ry</label><input id="ellipseRy" type="number" value="80"></div>
+          </div>
+          <div id="pointsFields" class="field full hidden">
+            <label for="pointsInput">Pontos</label>
+            <textarea id="pointsInput">100,100 220,60 310,160 240,260 110,210</textarea>
+          </div>
+
+          <div class="style-grid full">
+            <div class="field"><label for="fillColor">Preenchimento</label><input id="fillColor" type="color" value="#f4b183"></div>
+            <div class="field"><label for="strokeColor">Borda</label><input id="strokeColor" type="color" value="#8a3d1e"></div>
+            <div class="field"><label for="strokeWidth">Espessura</label><input id="strokeWidth" type="number" min="1" value="3"></div>
+            <div class="field"><label for="shapeOpacity">Opacidade</label><input id="shapeOpacity" type="number" min="0" max="1" step="0.1" value="0.85"></div>
+          </div>
+        </div>
+
+        <div class="buttons">
+          <button id="addShapeBtn" class="primary">Adicionar</button>
+          <button id="undoBtn" class="secondary">Voltar</button>
+          <button id="redoBtn" class="secondary">Avançar</button>
+          <button id="loadDemoBtn" class="secondary">Carregar exemplo</button>
+          <button id="clearAllBtn" class="danger">Limpar tudo</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Elementos</h2>
+        <div id="shapeList" class="shape-list"></div>
+      </section>
+
+      <section class="section">
+        <h2>Editar selecionado</h2>
+        <div id="editEmpty" class="subtle-box">Selecione um elemento na lista ou no plano para editar.</div>
+        <div id="editPanel" class="hidden">
+          <div class="controls-grid">
+            <div class="field full"><label for="editType">Tipo</label><input id="editType" type="text" readonly></div>
+
+            <div id="editLineFields" class="controls-grid field-group full hidden">
+              <div class="field"><label for="editX1">x1</label><input id="editX1" type="number"></div>
+              <div class="field"><label for="editY1">y1</label><input id="editY1" type="number"></div>
+              <div class="field"><label for="editX2">x2</label><input id="editX2" type="number"></div>
+              <div class="field"><label for="editY2">y2</label><input id="editY2" type="number"></div>
+            </div>
+
+            <div id="editRectFields" class="controls-grid field-group full hidden">
+              <div class="field"><label for="editRectX">x</label><input id="editRectX" type="number"></div>
+              <div class="field"><label for="editRectY">y</label><input id="editRectY" type="number"></div>
+              <div class="field"><label for="editRectWidth">largura</label><input id="editRectWidth" type="number"></div>
+              <div class="field"><label for="editRectHeight">altura</label><input id="editRectHeight" type="number"></div>
+            </div>
+
+            <div id="editCircleFields" class="controls-grid field-group full hidden">
+              <div class="field"><label for="editCircleCx">cx</label><input id="editCircleCx" type="number"></div>
+              <div class="field"><label for="editCircleCy">cy</label><input id="editCircleCy" type="number"></div>
+              <div class="field"><label for="editCircleR">raio</label><input id="editCircleR" type="number"></div>
+            </div>
+
+            <div id="editEllipseFields" class="controls-grid field-group full hidden">
+              <div class="field"><label for="editEllipseCx">cx</label><input id="editEllipseCx" type="number"></div>
+              <div class="field"><label for="editEllipseCy">cy</label><input id="editEllipseCy" type="number"></div>
+              <div class="field"><label for="editEllipseRx">rx</label><input id="editEllipseRx" type="number"></div>
+              <div class="field"><label for="editEllipseRy">ry</label><input id="editEllipseRy" type="number"></div>
+            </div>
+
+            <div id="editPointsFields" class="field full hidden">
+              <label for="editPointsInput">Pontos</label>
+              <textarea id="editPointsInput"></textarea>
+            </div>
+
+            <div class="style-grid full">
+              <div class="field"><label for="editFillColor">Preenchimento</label><input id="editFillColor" type="color"></div>
+              <div class="field"><label for="editStrokeColor">Borda</label><input id="editStrokeColor" type="color"></div>
+              <div class="field"><label for="editStrokeWidth">Espessura</label><input id="editStrokeWidth" type="number" min="1"></div>
+              <div class="field"><label for="editShapeOpacity">Opacidade</label><input id="editShapeOpacity" type="number" min="0" max="1" step="0.1"></div>
+            </div>
+          </div>
+
+          <div class="buttons"><button id="applyEditBtn" class="primary">Aplicar edição</button></div>
+          <div class="mini-note">Você também pode arrastar os pontos azuis direto no plano para reposicionar a forma.</div>
+        </div>
+      </section>
+    </aside>
+
+    <main class="panel viewer">
+      <section class="viewer-top">
+        <div class="field"><label><input id="toggleGrid" type="checkbox" checked> Mostrar grade</label></div>
+        <div class="field"><label><input id="toggleAxes" type="checkbox" checked> Mostrar eixos</label></div>
+        <div class="field"><label><input id="toggleCoords" type="checkbox" checked> Mostrar coordenadas</label></div>
+        <div class="field"><label><input id="togglePoints" type="checkbox" checked> Mostrar pontos</label></div>
+        <button id="copySvgBtn" class="secondary">Copiar SVG</button>
+      </section>
+
+      <section class="viewer-stage">
+        <div class="svg-wrap"><svg id="svgPreview" xmlns="http://www.w3.org/2000/svg"></svg></div>
+      </section>
+
+      <section class="viewer-bottom">
+        <h3>Código SVG gerado</h3>
+        <div id="svgCode" class="code-box"></div>
+        <div class="hint">As coordenadas aparecem no preview para ajudar a montar as figuras visualmente.</div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const state = { svgWidth: 900, svgHeight: 600, gridStep: 25, shapes: [], selectedId: null, history: [], future: [], drag: null, snapCandidate: null };
+    const $ = (selector) => document.querySelector(selector);
+    const svgPreview = $("#svgPreview");
+    const svgCode = $("#svgCode");
+    const shapeList = $("#shapeList");
+    const shapeType = $("#shapeType");
+    const editPanel = $("#editPanel");
+    const editEmpty = $("#editEmpty");
+    const undoBtn = $("#undoBtn");
+    const redoBtn = $("#redoBtn");
+
+    const createFieldGroups = { line: $("#lineFields"), rect: $("#rectFields"), circle: $("#circleFields"), ellipse: $("#ellipseFields"), polygon: $("#pointsFields"), polyline: $("#pointsFields") };
+    const editFieldGroups = { line: $("#editLineFields"), rect: $("#editRectFields"), circle: $("#editCircleFields"), ellipse: $("#editEllipseFields"), polygon: $("#editPointsFields"), polyline: $("#editPointsFields") };
+
+    function uid() { return `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`; }
+    function cloneShapes() { return structuredClone(state.shapes); }
+    function setShapes(shapes, keepSelection = true) {
+      state.shapes = shapes;
+      if (keepSelection && state.selectedId && state.shapes.some((shape) => shape.id === state.selectedId)) return;
+      state.selectedId = state.shapes[0]?.id ?? null;
+    }
+    function commitHistory() {
+      state.history.push(cloneShapes());
+      if (state.history.length > 100) state.history.shift();
+      state.future = [];
+      updateHistoryButtons();
+    }
+    function updateHistoryButtons() {
+      undoBtn.disabled = state.history.length === 0;
+      redoBtn.disabled = state.future.length === 0;
+      undoBtn.style.opacity = undoBtn.disabled ? "0.5" : "1";
+      redoBtn.style.opacity = redoBtn.disabled ? "0.5" : "1";
+    }
+    function undo() {
+      if (!state.history.length) return;
+      state.future.push(cloneShapes());
+      setShapes(state.history.pop());
+      refresh();
+    }
+    function redo() {
+      if (!state.future.length) return;
+      state.history.push(cloneShapes());
+      setShapes(state.future.pop());
+      refresh();
+    }
+    function toNumber(value, fallback = 0) {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : fallback;
+    }
+    function parsePoints(text) {
+      return text.trim().split(/\s+/).map((pair) => pair.split(",").map(Number)).filter((pair) => pair.length === 2 && pair.every(Number.isFinite)).map(([x, y]) => ({ x, y }));
+    }
+    function pointsToText(points) { return points.map((point) => `${point.x},${point.y}`).join(" "); }
+    function currentStyle() {
+      return { fill: $("#fillColor").value, stroke: $("#strokeColor").value, strokeWidth: toNumber($("#strokeWidth").value, 2), opacity: toNumber($("#shapeOpacity").value, 1) };
+    }
+    function selectedShape() { return state.shapes.find((shape) => shape.id === state.selectedId) || null; }
+    function getShapePoints(shape) {
+      switch (shape.type) {
+        case "line": {
+          const mx = Math.round((shape.x1 + shape.x2) / 2);
+          const my = Math.round((shape.y1 + shape.y2) / 2);
+          return [{ x: shape.x1, y: shape.y1, label: "A", handle: "start" }, { x: shape.x2, y: shape.y2, label: "B", handle: "end" }, { x: mx, y: my, label: "M", handle: "move" }];
+        }
+        case "rect":
+          return [{ x: shape.x, y: shape.y, label: "A", handle: "tl" }, { x: shape.x + shape.width, y: shape.y, label: "B", handle: "tr" }, { x: shape.x + shape.width, y: shape.y + shape.height, label: "C", handle: "br" }, { x: shape.x, y: shape.y + shape.height, label: "D", handle: "bl" }, { x: shape.x + Math.round(shape.width / 2), y: shape.y + Math.round(shape.height / 2), label: "M", handle: "move" }];
+        case "circle":
+          return [
+            { x: shape.cx, y: shape.cy, label: "M", handle: "move" },
+            { x: shape.cx + shape.r, y: shape.cy, label: "RX", handle: "rx" },
+            { x: shape.cx, y: shape.cy + shape.r, label: "RY", handle: "ry" }
+          ];
+        case "ellipse": return [{ x: shape.cx, y: shape.cy, label: "M", handle: "move" }, { x: shape.cx + shape.rx, y: shape.cy, label: "RX", handle: "rx" }, { x: shape.cx, y: shape.cy + shape.ry, label: "RY", handle: "ry" }];
+        case "polygon":
+        case "polyline": {
+          const total = shape.points.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
+          const center = { x: Math.round(total.x / shape.points.length), y: Math.round(total.y / shape.points.length), label: "M", handle: "move" };
+          return [...shape.points.map((point, index) => ({ ...point, label: `P${index + 1}`, handle: `p${index}` })), center];
+        }
+        case "graph": {
+          const total = shape.points.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
+          const center = { x: Math.round(total.x / shape.points.length), y: Math.round(total.y / shape.points.length), label: "M", handle: "move" };
+          return [...shape.points.map((point, index) => ({ ...point, label: `P${index + 1}`, handle: `p${index}` })), center];
+        }
+        default: return [];
+      }
+    }
+    function shapeSummary(shape) {
+      switch (shape.type) {
+        case "line": return `(${shape.x1}, ${shape.y1}) -> (${shape.x2}, ${shape.y2})`;
+        case "rect": return `x ${shape.x}, y ${shape.y}, ${shape.width}x${shape.height}`;
+        case "circle": return `centro (${shape.cx}, ${shape.cy}), r ${shape.r}`;
+        case "ellipse": return `centro (${shape.cx}, ${shape.cy}), rx ${shape.rx}, ry ${shape.ry}`;
+        case "polygon":
+        case "polyline": return `${shape.points.length} pontos`;
+        case "graph": return `${shape.points.length} pontos, ${shape.edges.length} ligações`;
+        default: return "";
+      }
+    }
+    function shapeToSvg(shape, selected = false) {
+      const attrs = `fill="${shape.fill}" stroke="${shape.stroke}" stroke-width="${shape.strokeWidth}" opacity="${shape.opacity}"`;
+      const extra = selected ? ` filter="drop-shadow(0 0 5px rgba(177,77,36,0.35))"` : "";
+      switch (shape.type) {
+        case "line": return `<line data-shape-id="${shape.id}" x1="${shape.x1}" y1="${shape.y1}" x2="${shape.x2}" y2="${shape.y2}" ${attrs} fill="none"${extra} />`;
+        case "rect": return `<rect data-shape-id="${shape.id}" x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" ${attrs}${extra} />`;
+        case "circle": return `<circle data-shape-id="${shape.id}" cx="${shape.cx}" cy="${shape.cy}" r="${shape.r}" ${attrs}${extra} />`;
+        case "ellipse": return `<ellipse data-shape-id="${shape.id}" cx="${shape.cx}" cy="${shape.cy}" rx="${shape.rx}" ry="${shape.ry}" ${attrs}${extra} />`;
+        case "polygon": return `<polygon data-shape-id="${shape.id}" points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}" ${attrs}${extra} />`;
+        case "polyline": return `<polyline data-shape-id="${shape.id}" points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}" ${attrs} fill="none"${extra} />`;
+        case "graph":
+          return shape.edges.map(([a, b]) => `<line data-shape-id="${shape.id}" x1="${shape.points[a].x}" y1="${shape.points[a].y}" x2="${shape.points[b].x}" y2="${shape.points[b].y}" ${attrs} fill="none"${extra} />`).join("");
+        default: return "";
+      }
+    }
+    function updateShapeById(id, updater) {
+      state.shapes = state.shapes.map((shape) => shape.id === id ? updater(structuredClone(shape)) : shape);
+    }
+    function syncCreateFieldVisibility() {
+      Object.values(createFieldGroups).forEach((group) => group.classList.add("hidden"));
+      createFieldGroups[shapeType.value].classList.remove("hidden");
+    }
+    function syncEditFieldVisibility(type) {
+      Object.values(editFieldGroups).forEach((group) => group.classList.add("hidden"));
+      if (type && editFieldGroups[type]) editFieldGroups[type].classList.remove("hidden");
+    }
+    function fillEditPanel() {
+      const shape = selectedShape();
+      if (!shape) {
+        editPanel.classList.add("hidden");
+        editEmpty.classList.remove("hidden");
+        return;
+      }
+      editPanel.classList.remove("hidden");
+      editEmpty.classList.add("hidden");
+      $("#editType").value = shape.type;
+      $("#editFillColor").value = shape.fill === "none" ? "#000000" : shape.fill;
+      $("#editStrokeColor").value = shape.stroke;
+      $("#editStrokeWidth").value = shape.strokeWidth;
+      $("#editShapeOpacity").value = shape.opacity;
+      syncEditFieldVisibility(shape.type);
+      if (shape.type === "line") {
+        $("#editX1").value = shape.x1; $("#editY1").value = shape.y1; $("#editX2").value = shape.x2; $("#editY2").value = shape.y2;
+      } else if (shape.type === "rect") {
+        $("#editRectX").value = shape.x; $("#editRectY").value = shape.y; $("#editRectWidth").value = shape.width; $("#editRectHeight").value = shape.height;
+      } else if (shape.type === "circle") {
+        $("#editCircleCx").value = shape.cx; $("#editCircleCy").value = shape.cy; $("#editCircleR").value = shape.r;
+      } else if (shape.type === "ellipse") {
+        $("#editEllipseCx").value = shape.cx; $("#editEllipseCy").value = shape.cy; $("#editEllipseRx").value = shape.rx; $("#editEllipseRy").value = shape.ry;
+      } else if (shape.type === "polygon" || shape.type === "polyline") {
+        $("#editPointsInput").value = pointsToText(shape.points);
+      } else {
+        $("#editPointsInput").value = pointsToText(shape.points);
+      }
+    }
+    function buildShape() {
+      const type = shapeType.value;
+      const style = currentStyle();
+      const base = { id: uid(), type, ...style };
+      if (type === "line") return { ...base, x1: toNumber($("#x1").value), y1: toNumber($("#y1").value), x2: toNumber($("#x2").value), y2: toNumber($("#y2").value), fill: "none" };
+      if (type === "rect") return { ...base, x: toNumber($("#rectX").value), y: toNumber($("#rectY").value), width: toNumber($("#rectWidth").value, 100), height: toNumber($("#rectHeight").value, 80) };
+      if (type === "circle") return { ...base, cx: toNumber($("#circleCx").value), cy: toNumber($("#circleCy").value), r: toNumber($("#circleR").value, 40) };
+      if (type === "ellipse") return { ...base, cx: toNumber($("#ellipseCx").value), cy: toNumber($("#ellipseCy").value), rx: toNumber($("#ellipseRx").value, 70), ry: toNumber($("#ellipseRy").value, 35) };
+      return { ...base, points: parsePoints($("#pointsInput").value), fill: type === "polyline" ? "none" : style.fill };
+    }
+    function addShape() {
+      const shape = buildShape();
+      if ((shape.type === "polygon" || shape.type === "polyline") && shape.points.length < 2) {
+        alert("Informe pelo menos 2 pontos válidos no formato x,y.");
+        return;
+      }
+      commitHistory();
+      state.shapes.push(shape);
+      state.selectedId = shape.id;
+      refresh();
+    }
+    function applyEdits() {
+      const shape = selectedShape();
+      if (!shape) return;
+      if ((shape.type === "polygon" || shape.type === "polyline") && parsePoints($("#editPointsInput").value).length < 2) {
+        alert("Informe pelo menos 2 pontos válidos.");
+        return;
+      }
+      commitHistory();
+      updateShapeById(shape.id, (draft) => {
+        draft.stroke = $("#editStrokeColor").value;
+        draft.strokeWidth = toNumber($("#editStrokeWidth").value, 1);
+        draft.opacity = toNumber($("#editShapeOpacity").value, 1);
+        if (draft.type === "line") {
+          draft.x1 = toNumber($("#editX1").value); draft.y1 = toNumber($("#editY1").value); draft.x2 = toNumber($("#editX2").value); draft.y2 = toNumber($("#editY2").value); draft.fill = "none";
+        } else if (draft.type === "rect") {
+          draft.x = toNumber($("#editRectX").value); draft.y = toNumber($("#editRectY").value); draft.width = Math.max(1, toNumber($("#editRectWidth").value, 1)); draft.height = Math.max(1, toNumber($("#editRectHeight").value, 1)); draft.fill = $("#editFillColor").value;
+        } else if (draft.type === "circle") {
+          draft.cx = toNumber($("#editCircleCx").value); draft.cy = toNumber($("#editCircleCy").value); draft.r = Math.max(1, toNumber($("#editCircleR").value, 1)); draft.fill = $("#editFillColor").value;
+        } else if (draft.type === "ellipse") {
+          draft.cx = toNumber($("#editEllipseCx").value); draft.cy = toNumber($("#editEllipseCy").value); draft.rx = Math.max(1, toNumber($("#editEllipseRx").value, 1)); draft.ry = Math.max(1, toNumber($("#editEllipseRy").value, 1)); draft.fill = $("#editFillColor").value;
+        } else if (draft.type === "polygon") {
+          draft.points = parsePoints($("#editPointsInput").value); draft.fill = $("#editFillColor").value;
+        } else if (draft.type === "polyline") {
+          draft.points = parsePoints($("#editPointsInput").value); draft.fill = "none";
+        } else if (draft.type === "graph") {
+          draft.points = parsePoints($("#editPointsInput").value);
+        }
+        return draft;
+      });
+      refresh();
+    }
+    function isVertexHandle(handle) {
+      return handle !== "move" && handle !== "radius" && handle !== "rx" && handle !== "ry";
+    }
+    function toPointShape(shape) {
+      if (shape.type === "line") {
+        return { ...structuredClone(shape), type: "polyline", points: [{ x: shape.x1, y: shape.y1 }, { x: shape.x2, y: shape.y2 }], fill: "none" };
+      }
+      if (shape.type === "rect") {
+        return { ...structuredClone(shape), type: "polygon", points: [{ x: shape.x, y: shape.y }, { x: shape.x + shape.width, y: shape.y }, { x: shape.x + shape.width, y: shape.y + shape.height }, { x: shape.x, y: shape.y + shape.height }] };
+      }
+      if (shape.type === "polygon" || shape.type === "polyline") {
+        return structuredClone(shape);
+      }
+      if (shape.type === "graph") {
+        return structuredClone(shape);
+      }
+      return null;
+    }
+    function normalizePointShape(shape) {
+      if (!shape || !shape.points) return shape;
+      const deduped = [];
+      for (const point of shape.points) {
+        if (!deduped.some((item) => item.x === point.x && item.y === point.y)) deduped.push(point);
+      }
+      if (shape.type === "polygon" && deduped.length > 1) {
+        const first = deduped[0];
+        const last = deduped[deduped.length - 1];
+        if (first.x === last.x && first.y === last.y) deduped.pop();
+      }
+      shape.points = deduped;
+      if (shape.type === "polygon" && shape.points.length < 3) {
+        shape.type = "polyline";
+        shape.fill = "none";
+      }
+      if (shape.type === "polyline" && shape.points.length === 2) {
+        shape.x1 = shape.points[0].x;
+        shape.y1 = shape.points[0].y;
+        shape.x2 = shape.points[1].x;
+        shape.y2 = shape.points[1].y;
+        delete shape.points;
+        shape.type = "line";
+        shape.fill = "none";
+      }
+      return shape;
+    }
+    function getHandleIndex(shape, handle) {
+      if (shape.type === "line") return handle === "start" ? 0 : 1;
+      if (shape.type === "rect") return { tl: 0, tr: 1, br: 2, bl: 3 }[handle];
+      if (shape.type === "polygon" || shape.type === "polyline" || shape.type === "graph") return Number(handle.slice(1));
+      return null;
+    }
+    function samePoint(a, b) {
+      return a && b && a.x === b.x && a.y === b.y;
+    }
+    function pointKey(point) {
+      return `${point.x},${point.y}`;
+    }
+    function shapeToSegments(shape) {
+      const pointShape = toPointShape(shape);
+      if (!pointShape) return null;
+      if (pointShape.type === "graph") {
+        return {
+          pointShape,
+          edges: pointShape.edges.map(([a, b]) => [pointShape.points[a], pointShape.points[b]])
+        };
+      }
+      const edges = [];
+      for (let i = 0; i < pointShape.points.length - 1; i += 1) {
+        edges.push([pointShape.points[i], pointShape.points[i + 1]]);
+      }
+      if (pointShape.type === "polygon" && pointShape.points.length > 2) {
+        edges.push([pointShape.points[pointShape.points.length - 1], pointShape.points[0]]);
+      }
+      return { pointShape, edges };
+    }
+    function rebuildShapeFromSegments(segments, baseStyle) {
+      const uniqueEdges = [];
+      const seen = new Set();
+      for (const [a, b] of segments) {
+        if (samePoint(a, b)) continue;
+        const key = [pointKey(a), pointKey(b)].sort().join("|");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        uniqueEdges.push([{ x: a.x, y: a.y }, { x: b.x, y: b.y }]);
+      }
+      if (!uniqueEdges.length) return null;
+
+      const adjacency = new Map();
+      for (const [a, b] of uniqueEdges) {
+        const keyA = pointKey(a);
+        const keyB = pointKey(b);
+        if (!adjacency.has(keyA)) adjacency.set(keyA, { point: a, neighbors: [] });
+        if (!adjacency.has(keyB)) adjacency.set(keyB, { point: b, neighbors: [] });
+        adjacency.get(keyA).neighbors.push(keyB);
+        adjacency.get(keyB).neighbors.push(keyA);
+      }
+
+      const degreeOne = [...adjacency.entries()].filter(([, value]) => value.neighbors.length === 1).map(([key]) => key);
+      const maxDegree = Math.max(...[...adjacency.values()].map((value) => value.neighbors.length));
+      const isClosed = degreeOne.length === 0 && [...adjacency.values()].every((value) => value.neighbors.length === 2);
+      const isGraph = maxDegree > 2;
+      let startKey = isClosed ? adjacency.keys().next().value : degreeOne[0];
+      if (!startKey) startKey = adjacency.keys().next().value;
+
+      if (isGraph) {
+        const points = [...adjacency.values()].map((value) => ({ x: value.point.x, y: value.point.y }));
+        const edges = uniqueEdges.map(([a, b]) => [
+          points.findIndex((point) => samePoint(point, a)),
+          points.findIndex((point) => samePoint(point, b))
+        ]);
+        return {
+          id: uid(),
+          type: "graph",
+          points,
+          edges,
+          fill: "none",
+          stroke: baseStyle.stroke,
+          strokeWidth: baseStyle.strokeWidth,
+          opacity: baseStyle.opacity
+        };
+      }
+
+      const ordered = [];
+      let currentKey = startKey;
+      let previousKey = null;
+      const visitedEdges = new Set();
+
+      while (currentKey) {
+        const current = adjacency.get(currentKey);
+        ordered.push({ x: current.point.x, y: current.point.y });
+        const nextKey = current.neighbors.find((neighbor) => {
+          const edgeKey = [currentKey, neighbor].sort().join("|");
+          return !visitedEdges.has(edgeKey) && neighbor !== previousKey;
+        }) || current.neighbors.find((neighbor) => {
+          const edgeKey = [currentKey, neighbor].sort().join("|");
+          return !visitedEdges.has(edgeKey);
+        });
+
+        if (!nextKey) break;
+        const edgeKey = [currentKey, nextKey].sort().join("|");
+        visitedEdges.add(edgeKey);
+        previousKey = currentKey;
+        currentKey = nextKey;
+        if (isClosed && currentKey === startKey) break;
+      }
+
+      const resultType = isClosed ? "polygon" : "polyline";
+      const rebuilt = {
+        id: uid(),
+        type: resultType,
+        points: ordered,
+        fill: resultType === "polygon" ? baseStyle.fill : "none",
+        stroke: baseStyle.stroke,
+        strokeWidth: baseStyle.strokeWidth,
+        opacity: baseStyle.opacity
+      };
+      return normalizePointShape(rebuilt);
+    }
+    function getMergeCandidateForCurrentDrag() {
+      if (!state.drag || !isVertexHandle(state.drag.handle)) return null;
+      const sourceShape = state.shapes.find((shape) => shape.id === state.drag.shapeId);
+      if (!sourceShape) return null;
+      const sourcePoint = getShapePoints(sourceShape).find((point) => point.handle === state.drag.handle);
+      if (!sourcePoint) return null;
+
+      const candidates = state.shapes.flatMap((shape) =>
+        getShapePoints(shape)
+          .filter((point) => isVertexHandle(point.handle))
+          .map((point) => ({ shape, point }))
+      ).filter(({ shape, point }) => !(shape.id === sourceShape.id && point.handle === state.drag.handle));
+
+      let best = null;
+      for (const candidate of candidates) {
+        const sameGrid = Math.abs(candidate.point.x - sourcePoint.x) <= state.gridStep / 2
+          && Math.abs(candidate.point.y - sourcePoint.y) <= state.gridStep / 2;
+        if (!sameGrid) continue;
+        const distance = Math.hypot(candidate.point.x - sourcePoint.x, candidate.point.y - sourcePoint.y);
+        if (!best || distance < best.distance) best = { ...candidate, distance };
+      }
+      return best;
+    }
+    function tryMergeAtDragEnd() {
+      if (!state.drag || !isVertexHandle(state.drag.handle)) return false;
+      const sourceShape = state.shapes.find((shape) => shape.id === state.drag.shapeId);
+      if (!sourceShape) return false;
+      const sourcePoint = getShapePoints(sourceShape).find((point) => point.handle === state.drag.handle);
+      if (!sourcePoint) return false;
+      const best = getMergeCandidateForCurrentDrag();
+      if (!best) return false;
+
+      const sourceIndex = state.shapes.findIndex((shape) => shape.id === sourceShape.id);
+      const targetIndex = state.shapes.findIndex((shape) => shape.id === best.shape.id);
+      if (sourceIndex < 0 || targetIndex < 0) return false;
+
+      if (sourceShape.id === best.shape.id) {
+        const segmentData = shapeToSegments(sourceShape);
+        if (!segmentData) return false;
+        const normalized = rebuildShapeFromSegments(
+          segmentData.edges.map(([a, b]) => [
+            samePoint(a, sourcePoint) || samePoint(a, best.point) ? { x: best.point.x, y: best.point.y } : a,
+            samePoint(b, sourcePoint) || samePoint(b, best.point) ? { x: best.point.x, y: best.point.y } : b
+          ]),
+          segmentData.pointShape
+        );
+        if (!normalized) return false;
+        const nextShapes = structuredClone(state.shapes);
+        nextShapes[sourceIndex] = normalized;
+        setShapes(nextShapes, false);
+        state.selectedId = normalized.id;
+        return true;
+      }
+
+      const sourceSegments = shapeToSegments(sourceShape);
+      const targetSegments = shapeToSegments(best.shape);
+      if (!sourceSegments || !targetSegments) return false;
+
+      const mergedSegments = [...sourceSegments.edges, ...targetSegments.edges].map(([a, b]) => [
+        samePoint(a, sourcePoint) || samePoint(a, best.point) ? { x: best.point.x, y: best.point.y } : a,
+        samePoint(b, sourcePoint) || samePoint(b, best.point) ? { x: best.point.x, y: best.point.y } : b
+      ]);
+      const normalized = rebuildShapeFromSegments(mergedSegments, sourceSegments.pointShape);
+      if (!normalized) return false;
+      const nextShapes = state.shapes.filter((shape) => shape.id !== sourceShape.id && shape.id !== best.shape.id);
+      nextShapes.push(normalized);
+      setShapes(nextShapes, false);
+      state.selectedId = normalized.id;
+      return true;
+    }
+    function renderList() {
+      if (!state.shapes.length) {
+        shapeList.innerHTML = '<p class="shape-meta">Nenhum elemento ainda. Adicione uma forma para começar.</p>';
+        return;
+      }
+      shapeList.innerHTML = state.shapes.map((shape, index) => `
+        <div class="shape-item ${shape.id === state.selectedId ? "selected" : ""}" data-select-id="${shape.id}">
+          <div class="shape-head">
+            <div><strong>${index + 1}. ${shape.type}</strong><div class="shape-meta">${shapeSummary(shape)}</div></div>
+            <div class="shape-actions">
+              <button type="button" class="secondary" data-action="duplicate" data-id="${shape.id}">Duplicar</button>
+              <button type="button" class="danger" data-action="delete" data-id="${shape.id}">Excluir</button>
+            </div>
+          </div>
+          <div class="shape-meta">${getShapePoints(shape).map((p) => `${p.label}: (${p.x}, ${p.y})`).join(" | ")}</div>
+        </div>
+      `).join("");
+    }
+    function renderSvg() {
+      const width = state.svgWidth;
+      const height = state.svgHeight;
+      const showGrid = $("#toggleGrid").checked;
+      const showAxes = $("#toggleAxes").checked;
+      const showCoords = $("#toggleCoords").checked;
+      const showPoints = $("#togglePoints").checked;
+      const step = Math.max(5, state.gridStep);
+      svgPreview.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      svgPreview.setAttribute("preserveAspectRatio", "none");
+      svgPreview.style.width = `${width}px`;
+      svgPreview.style.height = `${height}px`;
+      let gridMarkup = "";
+      if (showGrid) {
+        for (let x = 0; x <= width; x += step) gridMarkup += `<line x1="${x}" y1="0" x2="${x}" y2="${height}" stroke="rgba(90, 74, 42, 0.14)" stroke-width="1" />`;
+        for (let y = 0; y <= height; y += step) gridMarkup += `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="rgba(90, 74, 42, 0.14)" stroke-width="1" />`;
+      }
+      const axesMarkup = showAxes
+        ? `<line x1="0" y1="0" x2="${width}" y2="0" stroke="#1b6b73" stroke-width="2" /><line x1="0" y1="0" x2="0" y2="${height}" stroke="#1b6b73" stroke-width="2" /><text x="8" y="18" font-size="13" fill="#1b6b73">Origem (0,0)</text>`
+        : "";
+      const shapesMarkup = state.shapes.map((shape) => shapeToSvg(shape, shape.id === state.selectedId)).join("\n");
+      const pointsMarkup = state.shapes.map((shape) => {
+        const isSelected = shape.id === state.selectedId;
+        const showSnapPoint = state.snapCandidate && state.snapCandidate.shape.id === shape.id;
+        if (!isSelected && !showSnapPoint) return "";
+        return getShapePoints(shape).map((point) => {
+          const isSnapPoint = state.snapCandidate && state.snapCandidate.shape.id === shape.id && state.snapCandidate.point.handle === point.handle;
+          if (!isSelected && !isSnapPoint) return "";
+          const radius = point.handle === "move" ? 7 : 6;
+          const fill = isSnapPoint ? "#2fb56f" : point.handle === "move" ? "#ff8f3d" : "#b14d24";
+          const handle = showPoints ? `<circle data-shape-id="${shape.id}" data-handle="${point.handle}" cx="${point.x}" cy="${point.y}" r="${radius}" fill="${fill}" stroke="#fff" stroke-width="1.5" style="cursor: pointer;" />` : "";
+          const label = showCoords ? `<text x="${point.x + 8}" y="${point.y - 8}" font-size="12" fill="#2e2418">${point.label} (${point.x}, ${point.y})</text>` : "";
+          return `${handle}${label}`;
+        }).join("");
+      }).join("");
+      const snapTextMarkup = state.snapCandidate
+        ? `<g pointer-events="none"><rect x="${state.snapCandidate.point.x + 10}" y="${state.snapCandidate.point.y - 34}" rx="8" ry="8" width="102" height="24" fill="rgba(47,181,111,0.92)" /><text x="${state.snapCandidate.point.x + 18}" y="${state.snapCandidate.point.y - 18}" font-size="12" fill="#fff">juntar pontos</text></g>`
+        : "";
+      svgPreview.innerHTML = `
+        <rect x="0" y="0" width="${width}" height="${height}" fill="#fffdfa" />
+        ${gridMarkup}
+        ${axesMarkup}
+        ${shapesMarkup}
+        ${pointsMarkup}
+        ${snapTextMarkup}
+      `;
+      svgCode.textContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">\n  ${shapesMarkup.split("\n").join("\n  ")}\n</svg>`;
+    }
+    function syncCanvasSettings() {
+      state.svgWidth = toNumber($("#svgWidth").value, state.svgWidth || 900);
+      state.svgHeight = toNumber($("#svgHeight").value, state.svgHeight || 600);
+      state.gridStep = toNumber($("#gridStep").value, state.gridStep || 25);
+    }
+    function refresh() {
+      renderList();
+      fillEditPanel();
+      renderSvg();
+      updateHistoryButtons();
+    }
+    function getSvgPoint(event) {
+      const point = svgPreview.createSVGPoint();
+      point.x = event.clientX;
+      point.y = event.clientY;
+      return point.matrixTransform(svgPreview.getScreenCTM().inverse());
+    }
+    function limitPoint(rawPoint) {
+      return { x: Math.max(0, Math.min(state.svgWidth, Math.round(rawPoint.x))), y: Math.max(0, Math.min(state.svgHeight, Math.round(rawPoint.y))) };
+    }
+    function moveShape(shape, dx, dy) {
+      if (shape.type === "line") {
+        shape.x1 += dx; shape.y1 += dy; shape.x2 += dx; shape.y2 += dy;
+      } else if (shape.type === "rect") {
+        shape.x += dx; shape.y += dy;
+      } else if (shape.type === "circle" || shape.type === "ellipse") {
+        shape.cx += dx; shape.cy += dy;
+      } else if (shape.type === "polygon" || shape.type === "polyline") {
+        shape.points = shape.points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+      } else if (shape.type === "graph") {
+        shape.points = shape.points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+      }
+    }
+    function applyHandleMove(shape, handle, rawPoint) {
+      const point = limitPoint(rawPoint);
+      if (shape.type === "line") {
+        if (handle === "move") {
+          const current = getShapePoints(shape).find((item) => item.handle === "move");
+          moveShape(shape, point.x - current.x, point.y - current.y);
+        } else if (handle === "start") { shape.x1 = point.x; shape.y1 = point.y; } else { shape.x2 = point.x; shape.y2 = point.y; }
+      } else if (shape.type === "rect") {
+        const right = shape.x + shape.width;
+        const bottom = shape.y + shape.height;
+        if (handle === "move") {
+          const current = getShapePoints(shape).find((item) => item.handle === "move");
+          moveShape(shape, point.x - current.x, point.y - current.y);
+        } else if (handle === "tl") {
+          shape.x = Math.min(point.x, right - 1); shape.y = Math.min(point.y, bottom - 1); shape.width = right - shape.x; shape.height = bottom - shape.y;
+        } else if (handle === "tr") {
+          shape.y = Math.min(point.y, bottom - 1); shape.width = Math.max(1, point.x - shape.x); shape.height = bottom - shape.y;
+        } else if (handle === "br") {
+          shape.width = Math.max(1, point.x - shape.x); shape.height = Math.max(1, point.y - shape.y);
+        } else if (handle === "bl") {
+          shape.x = Math.min(point.x, right - 1); shape.width = right - shape.x; shape.height = Math.max(1, point.y - shape.y);
+        }
+      } else if (shape.type === "circle") {
+        if (handle === "move") {
+          shape.cx = point.x; shape.cy = point.y;
+        } else if (handle === "rx") {
+          const rx = Math.max(1, Math.round(Math.abs(point.x - shape.cx)));
+          shape.type = "ellipse";
+          shape.rx = rx;
+          shape.ry = shape.r;
+          delete shape.r;
+          shape.fill = shape.fill === "none" ? "#000000" : shape.fill;
+        } else if (handle === "ry") {
+          const ry = Math.max(1, Math.round(Math.abs(point.y - shape.cy)));
+          shape.type = "ellipse";
+          shape.rx = shape.r;
+          shape.ry = ry;
+          delete shape.r;
+          shape.fill = shape.fill === "none" ? "#000000" : shape.fill;
+        }
+      } else if (shape.type === "ellipse") {
+        if (handle === "move") { shape.cx = point.x; shape.cy = point.y; }
+        else if (handle === "rx") { shape.rx = Math.max(1, Math.round(Math.abs(point.x - shape.cx))); }
+        else if (handle === "ry") { shape.ry = Math.max(1, Math.round(Math.abs(point.y - shape.cy))); }
+      } else if (shape.type === "polygon" || shape.type === "polyline") {
+        if (handle === "move") {
+          const current = getShapePoints(shape).find((item) => item.handle === "move");
+          moveShape(shape, point.x - current.x, point.y - current.y);
+        } else {
+          const index = Number(handle.slice(1));
+          if (Number.isInteger(index) && shape.points[index]) shape.points[index] = point;
+        }
+      } else if (shape.type === "graph") {
+        if (handle === "move") {
+          const current = getShapePoints(shape).find((item) => item.handle === "move");
+          moveShape(shape, point.x - current.x, point.y - current.y);
+        } else {
+          const index = Number(handle.slice(1));
+          if (Number.isInteger(index) && shape.points[index]) shape.points[index] = point;
+        }
+      }
+    }
+    shapeList.addEventListener("pointerdown", (event) => {
+      const button = event.target.closest("button");
+      if (button) return;
+      const item = event.target.closest("[data-select-id]");
+      if (!item) return;
+      event.preventDefault();
+      state.selectedId = item.dataset.selectId;
+      refresh();
+    });
+
+    shapeList.addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (button) {
+        const id = button.dataset.id;
+        const action = button.dataset.action;
+        const target = state.shapes.find((shape) => shape.id === id);
+        if (!target) return;
+        if (action === "delete") {
+          commitHistory();
+          state.shapes = state.shapes.filter((shape) => shape.id !== id);
+          if (state.selectedId === id) state.selectedId = state.shapes[0]?.id ?? null;
+        }
+        if (action === "duplicate") {
+          commitHistory();
+          const copy = { ...structuredClone(target), id: uid() };
+          state.shapes.push(copy);
+          state.selectedId = copy.id;
+        }
+        refresh();
+        return;
+      }
+    });
+
+    svgPreview.addEventListener("pointerdown", (event) => {
+      const handleNode = event.target.closest("[data-handle]");
+      if (handleNode) {
+        event.preventDefault();
+        state.selectedId = handleNode.dataset.shapeId;
+        commitHistory();
+        state.drag = { shapeId: handleNode.dataset.shapeId, handle: handleNode.dataset.handle };
+        refresh();
+        return;
+      }
+
+      const shapeNode = event.target.closest("[data-shape-id]");
+      if (shapeNode) {
+        event.preventDefault();
+        state.selectedId = shapeNode.dataset.shapeId;
+        refresh();
+        return;
+      }
+
+      if (!state.drag) {
+        state.selectedId = null;
+        refresh();
+      }
+    });
+
+    svgPreview.addEventListener("pointermove", (event) => {
+      if (!state.drag) return;
+      updateShapeById(state.drag.shapeId, (shape) => {
+        applyHandleMove(shape, state.drag.handle, getSvgPoint(event));
+        return shape;
+      });
+      state.snapCandidate = getMergeCandidateForCurrentDrag();
+      refresh();
+    });
+    window.addEventListener("pointerup", () => {
+      const merged = tryMergeAtDragEnd();
+      state.drag = null;
+      state.snapCandidate = null;
+      if (merged) refresh();
+      else refresh();
+    });
+
+    $("#addShapeBtn").addEventListener("click", addShape);
+    $("#applyEditBtn").addEventListener("click", applyEdits);
+    $("#undoBtn").addEventListener("click", undo);
+    $("#redoBtn").addEventListener("click", redo);
+    $("#loadDemoBtn").addEventListener("click", () => {
+      commitHistory();
+      setShapes([
+        { id: uid(), type: "rect", x: 90, y: 80, width: 220, height: 140, fill: "#f4b183", stroke: "#8a3d1e", strokeWidth: 3, opacity: 0.75 },
+        { id: uid(), type: "circle", cx: 480, cy: 180, r: 90, fill: "#cfe7d0", stroke: "#50794a", strokeWidth: 3, opacity: 0.85 },
+        { id: uid(), type: "line", x1: 90, y1: 320, x2: 360, y2: 470, fill: "none", stroke: "#1b6b73", strokeWidth: 4, opacity: 1 },
+        { id: uid(), type: "polygon", points: [{ x: 520, y: 320 }, { x: 710, y: 290 }, { x: 780, y: 430 }, { x: 610, y: 500 }], fill: "#f0d57a", stroke: "#8a6c13", strokeWidth: 3, opacity: 0.9 }
+      ], false);
+      refresh();
+    });
+    $("#clearAllBtn").addEventListener("click", () => {
+      commitHistory();
+      setShapes([], false);
+      refresh();
+    });
+    $("#copySvgBtn").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(svgCode.textContent);
+        alert("SVG copiado para a área de transferência.");
+      } catch (error) {
+        alert("Não consegui copiar automaticamente. Você pode copiar manualmente no bloco abaixo.");
+      }
+    });
+
+    shapeType.addEventListener("change", syncCreateFieldVisibility);
+    ["#svgWidth", "#svgHeight", "#gridStep"].forEach((selector) => {
+      $(selector).addEventListener("input", () => {
+        syncCanvasSettings();
+        refresh();
+      });
+      $(selector).addEventListener("change", () => {
+        syncCanvasSettings();
+        refresh();
+      });
+    });
+    ["#toggleGrid", "#toggleAxes", "#toggleCoords", "#togglePoints"].forEach((selector) => {
+      $(selector).addEventListener("input", refresh);
+      $(selector).addEventListener("change", refresh);
+    });
+    window.addEventListener("keydown", (event) => {
+      const tag = document.activeElement?.tagName;
+      const editingText = tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable;
+
+      if (event.ctrlKey && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        undo();
+        return;
+      }
+      if (event.ctrlKey && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redo();
+        return;
+      }
+      if (!editingText && event.key === "Delete" && state.selectedId) {
+        event.preventDefault();
+        commitHistory();
+        state.shapes = state.shapes.filter((shape) => shape.id !== state.selectedId);
+        state.selectedId = state.shapes[0]?.id ?? null;
+        refresh();
+      }
+    });
+
+    syncCreateFieldVisibility();
+    syncCanvasSettings();
+    setShapes([
+      { id: uid(), type: "rect", x: 90, y: 80, width: 220, height: 140, fill: "#f4b183", stroke: "#8a3d1e", strokeWidth: 3, opacity: 0.75 },
+      { id: uid(), type: "circle", cx: 480, cy: 180, r: 90, fill: "#cfe7d0", stroke: "#50794a", strokeWidth: 3, opacity: 0.85 },
+      { id: uid(), type: "line", x1: 90, y1: 320, x2: 360, y2: 470, fill: "none", stroke: "#1b6b73", strokeWidth: 4, opacity: 1 },
+      { id: uid(), type: "polygon", points: [{ x: 520, y: 320 }, { x: 710, y: 290 }, { x: 780, y: 430 }, { x: 610, y: 500 }], fill: "#f0d57a", stroke: "#8a6c13", strokeWidth: 3, opacity: 0.9 }
+    ], false);
+    refresh();
+  </script>
+</body>
+</html>
