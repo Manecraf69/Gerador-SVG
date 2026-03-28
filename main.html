@@ -323,7 +323,7 @@
   </div>
 
   <script>
-    const state = { svgWidth: 900, svgHeight: 600, gridStep: 25, shapes: [], selectedId: null, selectedPoint: null, history: [], future: [], drag: null, snapCandidate: null };
+    const state = { svgWidth: 900, svgHeight: 600, gridStep: 25, shapes: [], selectedId: null, selectedPoint: null, selectedEdge: null, history: [], future: [], drag: null, snapCandidate: null, lastHandleClick: null, hoverMidpoint: null };
     const $ = (selector) => document.querySelector(selector);
     const svgPreview = $("#svgPreview");
     const svgCode = $("#svgCode");
@@ -344,6 +344,7 @@
       if (keepSelection && state.selectedId && state.shapes.some((shape) => shape.id === state.selectedId)) return;
       state.selectedId = state.shapes[0]?.id ?? null;
       state.selectedPoint = null;
+      state.selectedEdge = null;
     }
     function commitHistory() {
       state.history.push(cloneShapes());
@@ -382,6 +383,7 @@
     }
     function selectedShape() { return state.shapes.find((shape) => shape.id === state.selectedId) || null; }
     function getShapePoints(shape) {
+      const diag = Math.SQRT1_2;
       switch (shape.type) {
         case "line": {
           const mx = Math.round((shape.x1 + shape.x2) / 2);
@@ -394,9 +396,19 @@
           return [
             { x: shape.cx, y: shape.cy, label: "M", handle: "move" },
             { x: shape.cx + shape.r, y: shape.cy, label: "RX", handle: "rx" },
-            { x: shape.cx, y: shape.cy + shape.r, label: "RY", handle: "ry" }
+            { x: shape.cx, y: shape.cy + shape.r, label: "RY", handle: "ry" },
+            { x: Math.round(shape.cx + (shape.r * diag)), y: Math.round(shape.cy + (shape.r * diag)), label: "S", handle: "scale" }
           ];
-        case "ellipse": return [{ x: shape.cx, y: shape.cy, label: "M", handle: "move" }, { x: shape.cx + shape.rx, y: shape.cy, label: "RX", handle: "rx" }, { x: shape.cx, y: shape.cy + shape.ry, label: "RY", handle: "ry" }];
+        case "ellipse": {
+          const sx = Math.round(shape.cx + (shape.rx * diag));
+          const sy = Math.round(shape.cy + (shape.ry * diag));
+          return [
+            { x: shape.cx, y: shape.cy, label: "M", handle: "move" },
+            { x: shape.cx + shape.rx, y: shape.cy, label: "RX", handle: "rx" },
+            { x: shape.cx, y: shape.cy + shape.ry, label: "RY", handle: "ry" },
+            { x: sx, y: sy, label: "S", handle: "scale" }
+          ];
+        }
         case "polygon":
         case "polyline": {
           const total = shape.points.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
@@ -423,22 +435,31 @@
         default: return "";
       }
     }
+    function svgTag(tagName, attrs) {
+      const body = attrs.map((attr) => `  ${attr}`).join("\n");
+      return `<${tagName}\n${body}\n/>`;
+    }
     function shapeToSvg(shape, selected = false) {
-      const attrs = `fill="${shape.fill}" stroke="${shape.stroke}" stroke-width="${shape.strokeWidth}" opacity="${shape.opacity}"`;
-      const extra = selected ? ` filter="drop-shadow(0 0 5px rgba(177,77,36,0.35))"` : "";
+      const extra = selected ? `filter="drop-shadow(0 0 5px rgba(177,77,36,0.35))"` : null;
+      const styleAttrs = [`fill="${shape.fill}"`, `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`];
       switch (shape.type) {
-        case "line": return `<line data-shape-id="${shape.id}" x1="${shape.x1}" y1="${shape.y1}" x2="${shape.x2}" y2="${shape.y2}" ${attrs} fill="none"${extra} />`;
-        case "rect": return `<rect data-shape-id="${shape.id}" x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" ${attrs}${extra} />`;
-        case "circle": return `<circle data-shape-id="${shape.id}" cx="${shape.cx}" cy="${shape.cy}" r="${shape.r}" ${attrs}${extra} />`;
-        case "ellipse": return `<ellipse data-shape-id="${shape.id}" cx="${shape.cx}" cy="${shape.cy}" rx="${shape.rx}" ry="${shape.ry}" ${attrs}${extra} />`;
-        case "polygon": return `<polygon data-shape-id="${shape.id}" points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}" ${attrs}${extra} />`;
-        case "polyline": return `<polyline data-shape-id="${shape.id}" points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}" ${attrs} fill="none"${extra} />`;
+        case "line":
+          return svgTag("line", [`data-shape-id="${shape.id}"`, `x1="${shape.x1}"`, `y1="${shape.y1}"`, `x2="${shape.x2}"`, `y2="${shape.y2}"`, 'fill="none"', `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`, ...(extra ? [extra] : [])]);
+        case "rect":
+          return svgTag("rect", [`data-shape-id="${shape.id}"`, `x="${shape.x}"`, `y="${shape.y}"`, `width="${shape.width}"`, `height="${shape.height}"`, ...styleAttrs, ...(extra ? [extra] : [])]);
+        case "circle":
+          return svgTag("circle", [`data-shape-id="${shape.id}"`, `cx="${shape.cx}"`, `cy="${shape.cy}"`, `r="${shape.r}"`, ...styleAttrs, ...(extra ? [extra] : [])]);
+        case "ellipse":
+          return svgTag("ellipse", [`data-shape-id="${shape.id}"`, `cx="${shape.cx}"`, `cy="${shape.cy}"`, `rx="${shape.rx}"`, `ry="${shape.ry}"`, ...styleAttrs, ...(extra ? [extra] : [])]);
+        case "polygon":
+          return svgTag("polygon", [`data-shape-id="${shape.id}"`, `points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}"`, ...styleAttrs, ...(extra ? [extra] : [])]);
+        case "polyline":
+          return svgTag("polyline", [`data-shape-id="${shape.id}"`, `points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}"`, 'fill="none"', `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`, ...(extra ? [extra] : [])]);
         case "graph": {
           const loops = shape.fill === "none" ? [] : getGraphFillLoops(shape);
-          const fillMarkup = loops.map((loop) => `<polygon data-shape-id="${shape.id}" points="${loop.map((p) => `${p.x},${p.y}`).join(" ")}" fill="${shape.fill}" stroke="none" opacity="${shape.opacity}"${extra} />`).join("");
-          const edgeAttrs = `stroke="${shape.stroke}" stroke-width="${shape.strokeWidth}" opacity="${shape.opacity}"`;
-          const edgeMarkup = shape.edges.map(([a, b]) => `<line data-shape-id="${shape.id}" x1="${shape.points[a].x}" y1="${shape.points[a].y}" x2="${shape.points[b].x}" y2="${shape.points[b].y}" ${edgeAttrs} fill="none"${extra} />`).join("");
-          return `${fillMarkup}${edgeMarkup}`;
+          const fillMarkup = loops.map((loop) => svgTag("polygon", [`data-shape-id="${shape.id}"`, `points="${loop.map((p) => `${p.x},${p.y}`).join(" ")}"`, `fill="${shape.fill}"`, 'stroke="none"', `opacity="${shape.opacity}"`, ...(extra ? [extra] : [])])).join("\n");
+          const edgeMarkup = shape.edges.map(([a, b]) => svgTag("line", [`data-shape-id="${shape.id}"`, `x1="${shape.points[a].x}"`, `y1="${shape.points[a].y}"`, `x2="${shape.points[b].x}"`, `y2="${shape.points[b].y}"`, 'fill="none"', `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`, ...(extra ? [extra] : [])])).join("\n");
+          return [fillMarkup, edgeMarkup].filter(Boolean).join("\n");
         }
         default: return "";
       }
@@ -536,7 +557,7 @@
       refresh();
     }
     function isVertexHandle(handle) {
-      return handle !== "move" && handle !== "radius" && handle !== "rx" && handle !== "ry";
+      return handle !== "move" && handle !== "radius" && handle !== "rx" && handle !== "ry" && handle !== "scale";
     }
     function toPointShape(shape) {
       if (shape.type === "line") {
@@ -585,6 +606,120 @@
       if (shape.type === "rect") return { tl: 0, tr: 1, br: 2, bl: 3 }[handle];
       if (shape.type === "polygon" || shape.type === "polyline" || shape.type === "graph") return Number(handle.slice(1));
       return null;
+    }
+    function edgeKey(a, b) {
+      return a < b ? `${a}-${b}` : `${b}-${a}`;
+    }
+    function getPointShapeEdgeInfos(pointShape) {
+      if (!pointShape?.points?.length) return [];
+      if (pointShape.type === "graph") {
+        return pointShape.edges
+          .filter(([a, b]) => Number.isInteger(a) && Number.isInteger(b) && pointShape.points[a] && pointShape.points[b] && a !== b)
+          .map(([a, b]) => ({ a, b }));
+      }
+      const edges = [];
+      for (let i = 0; i < pointShape.points.length - 1; i += 1) edges.push({ a: i, b: i + 1 });
+      if (pointShape.type === "polygon" && pointShape.points.length > 2) edges.push({ a: pointShape.points.length - 1, b: 0 });
+      return edges;
+    }
+    function getShapeMidpoints(shape) {
+      const pointShape = toPointShape(shape);
+      if (!pointShape) return [];
+      return getPointShapeEdgeInfos(pointShape).map(({ a, b }) => ({
+        shapeId: shape.id,
+        a,
+        b,
+        key: edgeKey(a, b),
+        x: Math.round((pointShape.points[a].x + pointShape.points[b].x) / 2),
+        y: Math.round((pointShape.points[a].y + pointShape.points[b].y) / 2)
+      }));
+    }
+    function getShapeEdgeHandles(shape) {
+      const pointShape = toPointShape(shape);
+      if (!pointShape) return [];
+      return getPointShapeEdgeInfos(pointShape).map(({ a, b }) => ({
+        shapeId: shape.id,
+        a,
+        b,
+        key: edgeKey(a, b),
+        x1: pointShape.points[a].x,
+        y1: pointShape.points[a].y,
+        x2: pointShape.points[b].x,
+        y2: pointShape.points[b].y
+      }));
+    }
+    function getHoveredMidpoint(rawPoint) {
+      const shape = selectedShape();
+      if (!shape) return null;
+      const midpoints = getShapeMidpoints(shape);
+      if (!midpoints.length) return null;
+      let best = null;
+      for (const midpoint of midpoints) {
+        const distance = Math.hypot(midpoint.x - rawPoint.x, midpoint.y - rawPoint.y);
+        if (distance > 16) continue;
+        if (!best || distance < best.distance) best = { ...midpoint, distance };
+      }
+      return best;
+    }
+    function insertPointOnConnection(shape, a, b, rawPoint) {
+      const pointShape = toPointShape(shape);
+      const graphShape = toGraphShape(pointShape);
+      if (!graphShape) return null;
+      const point = limitPoint(rawPoint);
+      const edgeIndex = graphShape.edges.findIndex(([x, y]) => (x === a && y === b) || (x === b && y === a));
+      if (edgeIndex < 0) return null;
+      const nextIndex = graphShape.points.length;
+      graphShape.points.push(point);
+      graphShape.edges.splice(edgeIndex, 1);
+      graphShape.edges.push([a, nextIndex], [nextIndex, b]);
+      Object.assign(shape, graphShape);
+      return { handle: `p${nextIndex}` };
+    }
+    function deleteSelectedEdge() {
+      const edge = state.selectedEdge;
+      if (!edge) return false;
+      const target = state.shapes.find((shape) => shape.id === edge.shapeId);
+      if (!target) return false;
+      commitHistory();
+      let removed = false;
+      updateShapeById(edge.shapeId, (shape) => {
+        const pointShape = toPointShape(shape);
+        const graphShape = toGraphShape(pointShape);
+        if (!graphShape) return shape;
+        const key = edgeKey(edge.a, edge.b);
+        const before = graphShape.edges.length;
+        graphShape.edges = graphShape.edges.filter(([a, b]) => edgeKey(a, b) !== key);
+        removed = graphShape.edges.length < before;
+        if (!removed) return shape;
+        if (!graphShape.edges.length) return null;
+        return graphShape;
+      });
+      state.shapes = state.shapes.filter(Boolean);
+      state.selectedPoint = null;
+      state.selectedEdge = null;
+      if (!state.shapes.some((shape) => shape.id === state.selectedId)) {
+        state.selectedId = state.shapes[0]?.id ?? null;
+      }
+      refresh();
+      return removed;
+    }
+    function addLinkedPointToShape(shape, handle) {
+      if (!isVertexHandle(handle)) return null;
+      const sourceShape = structuredClone(shape);
+      const index = getHandleIndex(sourceShape, handle);
+      if (!Number.isInteger(index) || index < 0) return null;
+
+      const pointShape = toPointShape(sourceShape);
+      if (!pointShape) return null;
+      const graphShape = toGraphShape(pointShape);
+      if (!graphShape || !graphShape.points[index]) return null;
+
+      const point = { ...graphShape.points[index] };
+      const nextIndex = graphShape.points.length;
+      graphShape.points.push(point);
+      graphShape.edges.push([index, nextIndex]);
+      Object.assign(shape, graphShape);
+      return { handle: `p${nextIndex}` };
     }
     function samePoint(a, b) {
       return a && b && a.x === b.x && a.y === b.y;
@@ -748,6 +883,27 @@
         edges.push([pointShape.points[pointShape.points.length - 1], pointShape.points[0]]);
       }
       return { pointShape, edges };
+    }
+    function toGraphShape(pointShape) {
+      if (!pointShape) return null;
+      if (pointShape.type === "graph") return structuredClone(pointShape);
+      if (pointShape.type !== "polygon" && pointShape.type !== "polyline") return null;
+
+      const graph = {
+        id: pointShape.id,
+        type: "graph",
+        points: pointShape.points.map((point) => ({ x: point.x, y: point.y })),
+        edges: [],
+        fill: pointShape.fill,
+        stroke: pointShape.stroke,
+        strokeWidth: pointShape.strokeWidth,
+        opacity: pointShape.opacity
+      };
+      for (let i = 0; i < graph.points.length - 1; i += 1) graph.edges.push([i, i + 1]);
+      if (pointShape.type === "polygon" && graph.points.length > 2) {
+        graph.edges.push([graph.points.length - 1, 0]);
+      }
+      return graph;
     }
     function deletePointFromShape(shape, index) {
       const pointShape = toPointShape(shape);
@@ -1033,6 +1189,20 @@
           return `${handle}${label}`;
         }).join("");
       }).join("");
+      const edgeHandleMarkup = state.shapes.map((shape) => {
+        if (shape.id !== state.selectedId) return "";
+        return getShapeEdgeHandles(shape).map((edge) => {
+          const selected = state.selectedEdge
+            && state.selectedEdge.shapeId === edge.shapeId
+            && edgeKey(state.selectedEdge.a, state.selectedEdge.b) === edge.key;
+          const stroke = selected ? "rgba(225, 73, 73, 0.9)" : "rgba(0, 0, 0, 0.001)";
+          const width = selected ? 10 : 16;
+          return `<line data-edge-shape-id="${edge.shapeId}" data-edge-a="${edge.a}" data-edge-b="${edge.b}" x1="${edge.x1}" y1="${edge.y1}" x2="${edge.x2}" y2="${edge.y2}" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" style="cursor: pointer;" />`;
+        }).join("");
+      }).join("");
+      const midpointMarkup = state.hoverMidpoint
+        ? `<circle data-mid-shape-id="${state.hoverMidpoint.shapeId}" data-mid-a="${state.hoverMidpoint.a}" data-mid-b="${state.hoverMidpoint.b}" cx="${state.hoverMidpoint.x}" cy="${state.hoverMidpoint.y}" r="4.2" fill="rgba(27,107,115,0.55)" stroke="#ffffff" stroke-width="1.3" style="cursor: grab;" />`
+        : "";
       const snapTextMarkup = state.snapCandidate
         ? `<g pointer-events="none"><rect x="${state.snapCandidate.point.x + 10}" y="${state.snapCandidate.point.y - 34}" rx="8" ry="8" width="102" height="24" fill="rgba(47,181,111,0.92)" /><text x="${state.snapCandidate.point.x + 18}" y="${state.snapCandidate.point.y - 18}" font-size="12" fill="#fff">juntar pontos</text></g>`
         : "";
@@ -1041,7 +1211,9 @@
         ${gridMarkup}
         ${axesMarkup}
         ${shapesMarkup}
+        ${edgeHandleMarkup}
         ${pointsMarkup}
+        ${midpointMarkup}
         ${snapTextMarkup}
       `;
       svgCode.textContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">\n  ${shapesMarkup.split("\n").join("\n  ")}\n</svg>`;
@@ -1086,7 +1258,7 @@
         shape.points = shape.points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
       }
     }
-    function applyHandleMove(shape, handle, rawPoint, snapToGrid = false) {
+    function applyHandleMove(shape, handle, rawPoint, snapToGrid = false, dragData = null) {
       const point = limitPoint(rawPoint, snapToGrid);
       if (shape.type === "line") {
         if (handle === "move") {
@@ -1125,11 +1297,30 @@
           shape.ry = ry;
           delete shape.r;
           shape.fill = shape.fill === "none" ? "#000000" : shape.fill;
+        } else if (handle === "scale") {
+          const dx = point.x - shape.cx;
+          const dy = point.y - shape.cy;
+          const distance = Math.hypot(dx, dy);
+          const baseR = dragData?.baseR ?? shape.r;
+          const baseDistance = dragData?.baseDistance ?? (baseR || 1);
+          const factor = Math.max(0.05, distance / baseDistance);
+          shape.r = Math.max(1, Math.round(baseR * factor));
         }
       } else if (shape.type === "ellipse") {
         if (handle === "move") { shape.cx = point.x; shape.cy = point.y; }
         else if (handle === "rx") { shape.rx = Math.max(1, Math.round(Math.abs(point.x - shape.cx))); }
         else if (handle === "ry") { shape.ry = Math.max(1, Math.round(Math.abs(point.y - shape.cy))); }
+        else if (handle === "scale") {
+          const dx = point.x - shape.cx;
+          const dy = point.y - shape.cy;
+          const distance = Math.hypot(dx, dy);
+          const baseRx = dragData?.baseRx ?? shape.rx;
+          const baseRy = dragData?.baseRy ?? shape.ry;
+          const baseDistance = dragData?.baseDistance ?? (Math.hypot(baseRx, baseRy) || 1);
+          const factor = Math.max(0.05, distance / baseDistance);
+          shape.rx = Math.max(1, Math.round(baseRx * factor));
+          shape.ry = Math.max(1, Math.round(baseRy * factor));
+        }
       } else if (shape.type === "polygon" || shape.type === "polyline") {
         if (handle === "move") {
           const current = getShapePoints(shape).find((item) => item.handle === "move");
@@ -1183,15 +1374,134 @@
     });
 
     svgPreview.addEventListener("pointerdown", (event) => {
+      if (state.drag?.floating) {
+        event.preventDefault();
+        const mergeTarget = event.target.closest("[data-handle]");
+        if (mergeTarget && isVertexHandle(mergeTarget.dataset.handle)) {
+          const targetShape = state.shapes.find((shape) => shape.id === mergeTarget.dataset.shapeId);
+          const targetPoint = targetShape
+            ? getShapePoints(targetShape).find((point) => point.handle === mergeTarget.dataset.handle)
+            : null;
+          if (targetPoint) {
+            updateShapeById(state.drag.shapeId, (shape) => {
+              applyHandleMove(shape, state.drag.handle, targetPoint, false, state.drag);
+              return shape;
+            });
+          } else {
+            updateShapeById(state.drag.shapeId, (shape) => {
+              applyHandleMove(shape, state.drag.handle, getSvgPoint(event), event.ctrlKey, state.drag);
+              return shape;
+            });
+          }
+        } else {
+          updateShapeById(state.drag.shapeId, (shape) => {
+            applyHandleMove(shape, state.drag.handle, getSvgPoint(event), event.ctrlKey, state.drag);
+            return shape;
+          });
+        }
+        tryMergeAtDragEnd();
+        state.drag = null;
+        state.snapCandidate = null;
+        refresh();
+        return;
+      }
+
+      const midpointNode = event.target.closest("[data-mid-shape-id]");
+      if (midpointNode) {
+        event.preventDefault();
+        const shapeId = midpointNode.dataset.midShapeId;
+        const a = Number(midpointNode.dataset.midA);
+        const b = Number(midpointNode.dataset.midB);
+        if (!Number.isInteger(a) || !Number.isInteger(b)) return;
+        commitHistory();
+        let createdHandle = null;
+        updateShapeById(shapeId, (shape) => {
+          const created = insertPointOnConnection(shape, a, b, getSvgPoint(event));
+          createdHandle = created?.handle ?? null;
+          return shape;
+        });
+        if (!createdHandle) {
+          refresh();
+          return;
+        }
+        state.selectedId = shapeId;
+        state.selectedPoint = { shapeId, handle: createdHandle };
+        state.selectedEdge = null;
+        state.drag = { shapeId, handle: createdHandle };
+        state.snapCandidate = null;
+        state.hoverMidpoint = null;
+        refresh();
+        return;
+      }
+
       const handleNode = event.target.closest("[data-handle]");
       if (handleNode) {
         event.preventDefault();
-        state.selectedId = handleNode.dataset.shapeId;
-        state.selectedPoint = isVertexHandle(handleNode.dataset.handle)
-          ? { shapeId: handleNode.dataset.shapeId, handle: handleNode.dataset.handle }
+        const shapeId = handleNode.dataset.shapeId;
+        const sourceHandle = handleNode.dataset.handle;
+        const now = Date.now();
+        const isDoubleClick = !!state.lastHandleClick
+          && state.lastHandleClick.shapeId === shapeId
+          && state.lastHandleClick.handle === sourceHandle
+          && (now - state.lastHandleClick.at) <= 320;
+        state.lastHandleClick = { shapeId, handle: sourceHandle, at: now };
+
+        if (isDoubleClick && isVertexHandle(sourceHandle)) {
+          const targetShape = state.shapes.find((shape) => shape.id === shapeId);
+          if (targetShape) {
+            commitHistory();
+            let createdHandle = null;
+            updateShapeById(shapeId, (shape) => {
+              const created = addLinkedPointToShape(shape, sourceHandle);
+              createdHandle = created?.handle ?? null;
+              return shape;
+            });
+            if (createdHandle) {
+              state.selectedId = shapeId;
+              state.selectedPoint = { shapeId, handle: createdHandle };
+              state.selectedEdge = null;
+              state.drag = { shapeId, handle: createdHandle, floating: true };
+              state.snapCandidate = null;
+              state.lastHandleClick = null;
+              refresh();
+              return;
+            }
+            refresh();
+            return;
+          }
+        }
+
+        state.selectedId = shapeId;
+        state.selectedPoint = isVertexHandle(sourceHandle)
+          ? { shapeId, handle: sourceHandle }
           : null;
+        state.selectedEdge = null;
         commitHistory();
-        state.drag = { shapeId: handleNode.dataset.shapeId, handle: handleNode.dataset.handle };
+        const dragState = { shapeId, handle: sourceHandle };
+        const dragShape = state.shapes.find((shape) => shape.id === shapeId);
+        if (sourceHandle === "scale" && dragShape?.type === "ellipse") {
+          dragState.baseRx = dragShape.rx;
+          dragState.baseRy = dragShape.ry;
+          dragState.baseDistance = Math.hypot(dragShape.rx, dragShape.ry) || 1;
+        } else if (sourceHandle === "scale" && dragShape?.type === "circle") {
+          dragState.baseR = dragShape.r;
+          dragState.baseDistance = dragShape.r || 1;
+        }
+        state.drag = dragState;
+        refresh();
+        return;
+      }
+      const edgeNode = event.target.closest("[data-edge-shape-id]");
+      if (edgeNode) {
+        event.preventDefault();
+        state.lastHandleClick = null;
+        state.selectedId = edgeNode.dataset.edgeShapeId;
+        state.selectedPoint = null;
+        state.selectedEdge = {
+          shapeId: edgeNode.dataset.edgeShapeId,
+          a: Number(edgeNode.dataset.edgeA),
+          b: Number(edgeNode.dataset.edgeB)
+        };
         refresh();
         return;
       }
@@ -1199,30 +1509,48 @@
       const shapeNode = event.target.closest("[data-shape-id]");
       if (shapeNode) {
         event.preventDefault();
+        state.lastHandleClick = null;
+        state.hoverMidpoint = null;
         state.selectedId = shapeNode.dataset.shapeId;
         state.selectedPoint = null;
+        state.selectedEdge = null;
         refresh();
         return;
       }
 
       if (!state.drag) {
+        state.lastHandleClick = null;
+        state.hoverMidpoint = null;
         state.selectedId = null;
         state.selectedPoint = null;
+        state.selectedEdge = null;
         refresh();
       }
     });
-
     svgPreview.addEventListener("pointermove", (event) => {
       if (!state.drag) return;
       updateShapeById(state.drag.shapeId, (shape) => {
-        applyHandleMove(shape, state.drag.handle, getSvgPoint(event), event.ctrlKey);
+        applyHandleMove(shape, state.drag.handle, getSvgPoint(event), event.ctrlKey, state.drag);
         return shape;
       });
       state.snapCandidate = getMergeCandidateForCurrentDrag();
+      state.hoverMidpoint = null;
+      refresh();
+    });
+    svgPreview.addEventListener("pointermove", (event) => {
+      if (state.drag) return;
+      const hovered = getHoveredMidpoint(getSvgPoint(event));
+      const current = state.hoverMidpoint;
+      const changed = (!current && hovered)
+        || (current && !hovered)
+        || (current && hovered && (current.shapeId !== hovered.shapeId || current.key !== hovered.key));
+      if (!changed) return;
+      state.hoverMidpoint = hovered ? { shapeId: hovered.shapeId, a: hovered.a, b: hovered.b, key: hovered.key, x: hovered.x, y: hovered.y } : null;
       refresh();
     });
     window.addEventListener("pointerup", () => {
       if (!state.drag) return;
+      if (state.drag.floating) return;
       const merged = tryMergeAtDragEnd();
       state.drag = null;
       state.snapCandidate = null;
@@ -1303,10 +1631,12 @@
       if (!editingText && event.key === "Delete" && state.selectedId) {
         event.preventDefault();
         if (deleteSelectedPoint()) return;
+        if (deleteSelectedEdge()) return;
         commitHistory();
         state.shapes = state.shapes.filter((shape) => shape.id !== state.selectedId);
         state.selectedId = state.shapes[0]?.id ?? null;
         state.selectedPoint = null;
+        state.selectedEdge = null;
         refresh();
       }
     });
