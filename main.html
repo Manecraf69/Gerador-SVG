@@ -116,6 +116,8 @@
       cursor: pointer;
     }
     .shape-item:hover { transform: translateY(-1px); }
+    .shape-item.dragging { opacity: 0.55; }
+    .shape-item.drop-target { border-color: var(--accent-2); box-shadow: inset 0 0 0 1px rgba(27, 107, 115, 0.28); }
     .shape-item.selected {
       border-color: var(--accent);
       box-shadow: inset 0 0 0 1px rgba(177, 77, 36, 0.18);
@@ -131,9 +133,35 @@
       display: grid; grid-template-rows: auto 1fr auto; min-height: calc(100vh - 40px);
     }
     .viewer-top {
-      padding: 18px; display: flex; flex-wrap: wrap; align-items: end; gap: 14px; border-bottom: 1px solid rgba(122, 92, 48, 0.14);
+      padding: 18px; display: flex; flex-direction: column; align-items: stretch; gap: 0; border-bottom: 1px solid rgba(122, 92, 48, 0.14);
     }
     .viewer-top .field { min-width: 110px; }
+    .viewer-top-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 14px;
+    }
+    .viewer-top-canvas {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed rgba(122, 92, 48, 0.2);
+    }
+    .canvas-inline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-right: 10px;
+    }
+    .canvas-inline input {
+      width: 82px;
+      padding: 6px 8px;
+      border-radius: 9px;
+      height: 34px;
+    }
     .viewer-stage { padding: 18px; min-height: 0; }
     .svg-wrap {
       width: 100%; height: 100%; min-height: 540px; border: 1px solid rgba(122, 92, 48, 0.22); border-radius: 22px; overflow: auto;
@@ -168,15 +196,6 @@
       <section class="section">
         <h1>Gerador SVG</h1>
         <p>Crie figuras, linhas e polígonos, veja as coordenadas dos pontos e copie o SVG pronto.</p>
-      </section>
-
-      <section class="section">
-        <h2>Canvas</h2>
-        <div class="canvas-grid">
-          <div class="field"><label for="svgWidth">Largura</label><input id="svgWidth" type="number" min="100" value="900"></div>
-          <div class="field"><label for="svgHeight">Altura</label><input id="svgHeight" type="number" min="100" value="600"></div>
-          <div class="field"><label for="gridStep">Grade</label><input id="gridStep" type="number" min="5" value="25"></div>
-        </div>
       </section>
 
       <section class="section">
@@ -302,12 +321,26 @@
 
     <main class="panel viewer">
       <section class="viewer-top">
-        <div class="field"><label><input id="toggleGrid" type="checkbox" checked> Mostrar grade</label></div>
-        <div class="field"><label><input id="toggleAxes" type="checkbox" checked> Mostrar eixos</label></div>
-        <div class="field"><label><input id="toggleCoords" type="checkbox" checked> Mostrar coordenadas</label></div>
-        <div class="field"><label><input id="togglePoints" type="checkbox" checked> Mostrar pontos</label></div>
-        <button type="button" id="downloadSvgBtn" class="secondary">Baixar SVG</button>
-        <button type="button" id="copySvgBtn" class="secondary">Copiar SVG</button>
+        <div class="viewer-top-main">
+          <div class="field"><label><input id="toggleGrid" type="checkbox" checked> Mostrar grade</label></div>
+          <div class="field"><label><input id="toggleAxes" type="checkbox" checked> Mostrar eixos</label></div>
+          <div class="field"><label><input id="toggleCoords" type="checkbox" checked> Mostrar coordenadas</label></div>
+          <div class="field"><label><input id="togglePoints" type="checkbox" checked> Mostrar pontos</label></div>
+          <button type="button" id="downloadSvgBtn" class="secondary">Baixar SVG</button>
+          <button type="button" id="copySvgBtn" class="secondary">Copiar SVG</button>
+        </div>
+        <div class="viewer-top-canvas">
+          <div class="canvas-inline">
+            <strong>Canvas</strong>
+            <span>- Largura</span>
+            <input id="svgWidth" type="number" min="100" value="900" aria-label="Largura do canvas">
+            <span>pixels / Altura</span>
+            <input id="svgHeight" type="number" min="100" value="600" aria-label="Altura do canvas">
+            <span>pixels | Grade</span>
+            <input id="gridStep" type="number" min="5" value="25" aria-label="Tamanho da grade">
+            <span>pixels</span>
+          </div>
+        </div>
       </section>
 
       <section class="viewer-stage">
@@ -323,7 +356,7 @@
   </div>
 
   <script>
-    const state = { svgWidth: 900, svgHeight: 600, gridStep: 25, shapes: [], selectedId: null, selectedPoint: null, selectedEdge: null, history: [], future: [], drag: null, snapCandidate: null, lastHandleClick: null, hoverMidpoint: null };
+    const state = { svgWidth: 900, svgHeight: 600, gridStep: 25, shapes: [], selectedId: null, selectedPoint: null, selectedEdge: null, history: [], future: [], drag: null, snapCandidate: null, lastHandleClick: null, hoverMidpoint: null, hoverStack: null };
     const $ = (selector) => document.querySelector(selector);
     const svgPreview = $("#svgPreview");
     const svgCode = $("#svgCode");
@@ -625,14 +658,23 @@
     function getShapeMidpoints(shape) {
       const pointShape = toPointShape(shape);
       if (!pointShape) return [];
-      return getPointShapeEdgeInfos(pointShape).map(({ a, b }) => ({
-        shapeId: shape.id,
-        a,
-        b,
-        key: edgeKey(a, b),
-        x: Math.round((pointShape.points[a].x + pointShape.points[b].x) / 2),
-        y: Math.round((pointShape.points[a].y + pointShape.points[b].y) / 2)
-      }));
+      return getPointShapeEdgeInfos(pointShape).map(({ a, b }) => {
+        const ax = pointShape.points[a].x;
+        const ay = pointShape.points[a].y;
+        const bx = pointShape.points[b].x;
+        const by = pointShape.points[b].y;
+        const x = (ax + bx) / 2;
+        const y = (ay + by) / 2;
+
+        return {
+          shapeId: shape.id,
+          a,
+          b,
+          key: edgeKey(a, b),
+          x: Math.round(x),
+          y: Math.round(y)
+        };
+      });
     }
     function getShapeEdgeHandles(shape) {
       const pointShape = toPointShape(shape);
@@ -660,6 +702,212 @@
         if (!best || distance < best.distance) best = { ...midpoint, distance };
       }
       return best;
+    }
+    function getOverlappingTargets(rawPoint) {
+      const shape = selectedShape();
+      if (!shape) return [];
+      const targets = [];
+      const snapPoint = state.snapCandidate && state.snapCandidate.shape.id === shape.id ? state.snapCandidate.point : null;
+      for (const point of getShapePoints(shape)) {
+        const distance = Math.hypot(point.x - rawPoint.x, point.y - rawPoint.y);
+        if (distance > 12) continue;
+        const isPointSelected = state.selectedPoint && state.selectedPoint.shapeId === shape.id && state.selectedPoint.handle === point.handle;
+        const isSnapPoint = !!snapPoint && snapPoint.handle === point.handle;
+        const baseRadius = point.handle === "move" ? 7 : 6;
+        targets.push({
+          kind: "handle",
+          shapeId: shape.id,
+          handle: point.handle,
+          x: point.x,
+          y: point.y,
+          distance,
+          label: `Ponto ${point.label}`,
+          style: {
+            radius: isPointSelected ? baseRadius + 1.5 : baseRadius,
+            fill: isSnapPoint ? "#2fb56f" : point.handle === "move" ? "#ff8f3d" : "#b14d24",
+            stroke: isPointSelected ? "#ffe08a" : "#fff",
+            strokeWidth: isPointSelected ? 2.6 : 1.5
+          }
+        });
+      }
+      for (const mid of getShapeMidpoints(shape)) {
+        const distance = Math.hypot(mid.x - rawPoint.x, mid.y - rawPoint.y);
+        if (distance > 12) continue;
+        targets.push({
+          kind: "midpoint",
+          shapeId: mid.shapeId,
+          a: mid.a,
+          b: mid.b,
+          x: mid.x,
+          y: mid.y,
+          distance,
+          label: `Novo ponto (P${mid.a + 1} - P${mid.b + 1})`,
+          style: { radius: 4.2, fill: "rgba(27,107,115,0.55)", stroke: "#ffffff", strokeWidth: 1.3 }
+        });
+      }
+      return targets.sort((a, b) => a.distance - b.distance);
+    }
+    function buildHoverStack(rawPoint) {
+      const overlaps = getOverlappingTargets(rawPoint);
+      if (overlaps.length < 2) return null;
+      const optionTargets = overlaps.slice(0, 5);
+      const optionCount = optionTargets.length;
+      const rowStep = 20;
+      const blockHeight = ((optionCount - 1) * rowStep) + 20;
+      const candidates = [
+        { dx: 72, dy: -12 }, { dx: -72, dy: -12 },
+        { dx: 72, dy: 24 }, { dx: -72, dy: 24 },
+        { dx: 110, dy: -8 }, { dx: -110, dy: -8 },
+        { dx: 0, dy: -74 }, { dx: 0, dy: 62 },
+        { dx: 138, dy: -4 }, { dx: -138, dy: -4 }
+      ];
+      const obstacles = [];
+      for (const s of state.shapes) {
+        for (const p of getShapePoints(s)) obstacles.push({ x: p.x, y: p.y });
+        for (const m of getShapeMidpoints(s)) obstacles.push({ x: m.x, y: m.y });
+      }
+      const labelBoxes = getSelectedCoordinateLabelBoxes();
+      function evaluateCandidate(circleX, topY) {
+        const labelOnRight = circleX >= rawPoint.x;
+        const options = optionTargets.map((target, index) => {
+          const optionY = topY + (index * rowStep);
+          const labelWidth = Math.max(70, Math.round(target.label.length * 6.7) + 8);
+          const radius = target.style?.radius ?? 5.4;
+          const textX = labelOnRight ? circleX + 10 : circleX - 10;
+          return {
+            ...target,
+            optionX: circleX,
+            optionY,
+            labelWidth,
+            textX,
+            labelOnRight,
+            box: {
+              x1: labelOnRight ? circleX - radius - 2 : textX - labelWidth - 2,
+              y1: optionY - 11,
+              x2: labelOnRight ? textX + labelWidth + 2 : circleX + radius + 2,
+              y2: optionY + 8
+            }
+          };
+        });
+        let score = 0;
+        for (const option of options) {
+          if (option.box.x1 < 4 || option.box.y1 < 4 || option.box.x2 > state.svgWidth - 4 || option.box.y2 > state.svgHeight - 4) score += 120;
+          for (const textBox of labelBoxes) {
+            const intersects = !(option.box.x2 < textBox.x1 || option.box.x1 > textBox.x2 || option.box.y2 < textBox.y1 || option.box.y1 > textBox.y2);
+            if (intersects) score += 150;
+          }
+          for (const obstacle of obstacles) {
+            if (obstacle.x >= option.box.x1 && obstacle.x <= option.box.x2 && obstacle.y >= option.box.y1 && obstacle.y <= option.box.y2) score += 90;
+            const d = Math.hypot(option.optionX - obstacle.x, option.optionY - obstacle.y);
+            if (d < 20) score += 45;
+          }
+        }
+        const centerY = topY + (blockHeight / 2);
+        const sourceDistance = Math.hypot(circleX - rawPoint.x, centerY - rawPoint.y);
+        if (sourceDistance < 56) score += (56 - sourceDistance) * 3;
+        return { score, options };
+      }
+
+      let best = null;
+      for (const c of candidates) {
+        const circleX = Math.max(18, Math.min(state.svgWidth - 18, rawPoint.x + c.dx));
+        const topY = Math.max(16, Math.min(state.svgHeight - blockHeight - 8, rawPoint.y + c.dy - (blockHeight / 2)));
+        const tested = evaluateCandidate(circleX, topY);
+        if (!best || tested.score < best.score) best = tested;
+      }
+
+      const options = (best?.options || []).map(({ box, labelWidth, textX, ...rest }) => rest);
+      const bounds = options.reduce((acc, option) => {
+        const labelWidth = Math.max(70, Math.round(option.label.length * 6.7) + 8);
+        const radius = option.style?.radius ?? 5.4;
+        const textX = option.labelOnRight ? option.optionX + 10 : option.optionX - 10;
+        const box = {
+          x1: option.labelOnRight ? option.optionX - radius - 2 : textX - labelWidth - 2,
+          y1: option.optionY - 11,
+          x2: option.labelOnRight ? textX + labelWidth + 2 : option.optionX + radius + 2,
+          y2: option.optionY + 8
+        };
+        return {
+          x1: Math.min(acc.x1, box.x1),
+          y1: Math.min(acc.y1, box.y1),
+          x2: Math.max(acc.x2, box.x2),
+          y2: Math.max(acc.y2, box.y2)
+        };
+      }, { x1: rawPoint.x, y1: rawPoint.y, x2: rawPoint.x, y2: rawPoint.y });
+      return {
+        sourceX: rawPoint.x,
+        sourceY: rawPoint.y,
+        options,
+        bounds
+      };
+    }
+    function isInsideHoverStackInteractionZone(rawPoint) {
+      const stack = state.hoverStack;
+      if (!stack?.bounds) return false;
+      const { bounds, sourceX, sourceY } = stack;
+      const zone = {
+        x1: Math.min(sourceX, bounds.x1) - 24,
+        y1: Math.min(sourceY, bounds.y1) - 28,
+        x2: Math.max(sourceX, bounds.x2) + 40,
+        y2: Math.max(sourceY, bounds.y2) + 32
+      };
+      return rawPoint.x >= zone.x1 && rawPoint.x <= zone.x2 && rawPoint.y >= zone.y1 && rawPoint.y <= zone.y2;
+    }
+    function buildLabelLayout(labels) {
+      const placed = [];
+      const layout = new Map();
+      const candidates = [
+        { dx: 8, dy: -8 },
+        { dx: 8, dy: 14 },
+        { dx: -94, dy: -8 },
+        { dx: -94, dy: 14 },
+        { dx: 14, dy: -22 },
+        { dx: 14, dy: 26 },
+        { dx: -110, dy: -22 },
+        { dx: -110, dy: 26 }
+      ];
+      const sorted = [...labels].sort((a, b) => a.anchorY - b.anchorY);
+      for (const label of sorted) {
+        const width = Math.max(40, Math.round(label.text.length * 6.7) + 6);
+        const height = 14;
+        let chosen = null;
+        for (const c of candidates) {
+          const x = label.anchorX + c.dx;
+          const y = label.anchorY + c.dy;
+          const box = { x1: x - 1, y1: y - 11, x2: x + width + 1, y2: y + 3 };
+          const overlaps = placed.some((p) => !(box.x2 < p.x1 || box.x1 > p.x2 || box.y2 < p.y1 || box.y1 > p.y2));
+          if (!overlaps) {
+            chosen = { x, y, box };
+            break;
+          }
+        }
+        if (!chosen) {
+          const x = label.anchorX + 8;
+          const y = label.anchorY + 30 + (placed.length % 3) * 14;
+          chosen = { x, y, box: { x1: x - 1, y1: y - 11, x2: x + width + 1, y2: y + 3 } };
+        }
+        placed.push(chosen.box);
+        layout.set(label.id, { x: chosen.x, y: chosen.y });
+      }
+      return layout;
+    }
+    function getSelectedCoordinateLabelBoxes() {
+      if (!$("#toggleCoords")?.checked) return [];
+      const shape = selectedShape();
+      if (!shape) return [];
+      const points = getShapePoints(shape);
+      const labels = points.map((point) => ({
+        id: `${shape.id}:${point.handle}`,
+        anchorX: point.x,
+        anchorY: point.y,
+        text: `${point.label} (${point.x}, ${point.y})`
+      }));
+      const layout = buildLabelLayout(labels);
+      return labels.map((label) => {
+        const pos = layout.get(label.id) || { x: label.anchorX + 8, y: label.anchorY - 8 };
+        const width = Math.max(40, Math.round(label.text.length * 6.7) + 6);
+        return { x1: pos.x - 1, y1: pos.y - 11, x2: pos.x + width + 1, y2: pos.y + 3 };
+      });
     }
     function insertPointOnConnection(shape, a, b, rawPoint) {
       const pointShape = toPointShape(shape);
@@ -1137,10 +1385,11 @@
         shapeList.innerHTML = '<p class="shape-meta">Nenhum elemento ainda. Adicione uma forma para começar.</p>';
         return;
       }
-      shapeList.innerHTML = state.shapes.map((shape, index) => `
-        <div class="shape-item ${shape.id === state.selectedId ? "selected" : ""}" data-select-id="${shape.id}">
+      const ordered = state.shapes.map((shape, index) => ({ shape, index })).reverse();
+      shapeList.innerHTML = ordered.map(({ shape, index }) => `
+        <div class="shape-item ${shape.id === state.selectedId ? "selected" : ""}" data-select-id="${shape.id}" data-array-index="${index}" draggable="true">
           <div class="shape-head">
-            <div><strong>${index + 1}. ${shape.type}</strong><div class="shape-meta">${shapeSummary(shape)}</div></div>
+            <div><strong>${state.shapes.length - index}. ${shape.type}</strong><div class="shape-meta">${shapeSummary(shape)}</div></div>
             <div class="shape-actions">
               <button type="button" class="secondary" data-action="duplicate" data-id="${shape.id}">Duplicar</button>
               <button type="button" class="danger" data-action="delete" data-id="${shape.id}">Excluir</button>
@@ -1171,24 +1420,40 @@
         ? `<line x1="0" y1="0" x2="${width}" y2="0" stroke="#1b6b73" stroke-width="2" /><line x1="0" y1="0" x2="0" y2="${height}" stroke="#1b6b73" stroke-width="2" /><text x="8" y="18" font-size="13" fill="#1b6b73">Origem (0,0)</text>`
         : "";
       const shapesMarkup = state.shapes.map((shape) => shapeToSvg(shape, shape.id === state.selectedId)).join("\n");
-      const pointsMarkup = state.shapes.map((shape) => {
+      const pointHandleChunks = [];
+      const labelItems = [];
+      for (const shape of state.shapes) {
         const isSelected = shape.id === state.selectedId;
         const showSnapPoint = state.snapCandidate && state.snapCandidate.shape.id === shape.id;
-        if (!isSelected && !showSnapPoint) return "";
-        return getShapePoints(shape).map((point) => {
+        if (!isSelected && !showSnapPoint) continue;
+        for (const point of getShapePoints(shape)) {
           const isSnapPoint = state.snapCandidate && state.snapCandidate.shape.id === shape.id && state.snapCandidate.point.handle === point.handle;
-          if (!isSelected && !isSnapPoint) return "";
+          if (!isSelected && !isSnapPoint) continue;
           const isPointSelected = state.selectedPoint && state.selectedPoint.shapeId === shape.id && state.selectedPoint.handle === point.handle;
           const baseRadius = point.handle === "move" ? 7 : 6;
           const radius = isPointSelected ? baseRadius + 1.5 : baseRadius;
           const fill = isSnapPoint ? "#2fb56f" : point.handle === "move" ? "#ff8f3d" : "#b14d24";
           const stroke = isPointSelected ? "#ffe08a" : "#fff";
           const strokeWidth = isPointSelected ? 2.6 : 1.5;
-          const handle = showPoints ? `<circle data-shape-id="${shape.id}" data-handle="${point.handle}" cx="${point.x}" cy="${point.y}" r="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" style="cursor: pointer;" />` : "";
-          const label = showCoords ? `<text x="${point.x + 8}" y="${point.y - 8}" font-size="12" fill="#2e2418">${point.label} (${point.x}, ${point.y})</text>` : "";
-          return `${handle}${label}`;
-        }).join("");
-      }).join("");
+          if (showPoints) pointHandleChunks.push(`<circle data-shape-id="${shape.id}" data-handle="${point.handle}" cx="${point.x}" cy="${point.y}" r="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" style="cursor: pointer;" />`);
+          if (showCoords) {
+            labelItems.push({
+              id: `${shape.id}:${point.handle}`,
+              anchorX: point.x,
+              anchorY: point.y,
+              text: `${point.label} (${point.x}, ${point.y})`
+            });
+          }
+        }
+      }
+      const labelLayout = showCoords ? buildLabelLayout(labelItems) : new Map();
+      const pointLabelChunks = showCoords
+        ? labelItems.map((label) => {
+          const pos = labelLayout.get(label.id) || { x: label.anchorX + 8, y: label.anchorY - 8 };
+          return `<text x="${pos.x}" y="${pos.y}" font-size="12" fill="#2e2418">${label.text}</text>`;
+        })
+        : [];
+      const pointsMarkup = `${pointHandleChunks.join("")}${pointLabelChunks.join("")}`;
       const edgeHandleMarkup = state.shapes.map((shape) => {
         if (shape.id !== state.selectedId) return "";
         return getShapeEdgeHandles(shape).map((edge) => {
@@ -1203,6 +1468,13 @@
       const midpointMarkup = state.hoverMidpoint
         ? `<circle data-mid-shape-id="${state.hoverMidpoint.shapeId}" data-mid-a="${state.hoverMidpoint.a}" data-mid-b="${state.hoverMidpoint.b}" cx="${state.hoverMidpoint.x}" cy="${state.hoverMidpoint.y}" r="4.2" fill="rgba(27,107,115,0.55)" stroke="#ffffff" stroke-width="1.3" style="cursor: grab;" />`
         : "";
+      const stackMarkup = state.hoverStack
+        ? `<g>${state.hoverStack.options.map((option, index) => `
+            <line x1="${option.x}" y1="${option.y}" x2="${option.x <= option.optionX ? option.optionX - (option.style?.radius ?? 5.4) : option.optionX + (option.style?.radius ?? 5.4)}" y2="${option.optionY}" stroke="rgba(46,36,24,0.38)" stroke-width="1.1" />
+            <circle data-stack-index="${index}" cx="${option.optionX}" cy="${option.optionY}" r="${option.style?.radius ?? 5.4}" fill="${option.style?.fill ?? "#fffdfa"}" stroke="${option.style?.stroke ?? "#2e2418"}" stroke-width="${option.style?.strokeWidth ?? 1.2}" style="cursor: pointer;" />
+            <text data-stack-index="${index}" x="${option.labelOnRight ? option.optionX + 10 : option.optionX - 10}" y="${option.optionY + 4}" text-anchor="${option.labelOnRight ? "start" : "end"}" font-size="12" fill="#2e2418" style="cursor: pointer;">${option.label}</text>
+          `).join("")}</g>`
+        : "";
       const snapTextMarkup = state.snapCandidate
         ? `<g pointer-events="none"><rect x="${state.snapCandidate.point.x + 10}" y="${state.snapCandidate.point.y - 34}" rx="8" ry="8" width="102" height="24" fill="rgba(47,181,111,0.92)" /><text x="${state.snapCandidate.point.x + 18}" y="${state.snapCandidate.point.y - 18}" font-size="12" fill="#fff">juntar pontos</text></g>`
         : "";
@@ -1214,6 +1486,7 @@
         ${edgeHandleMarkup}
         ${pointsMarkup}
         ${midpointMarkup}
+        ${stackMarkup}
         ${snapTextMarkup}
       `;
       svgCode.textContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">\n  ${shapesMarkup.split("\n").join("\n  ")}\n</svg>`;
@@ -1339,12 +1612,22 @@
         }
       }
     }
+    function moveShapeLayer(fromIndex, toIndex) {
+      if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return false;
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= state.shapes.length || toIndex >= state.shapes.length) return false;
+      if (fromIndex === toIndex) return false;
+      const next = [...state.shapes];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      state.shapes = next;
+      return true;
+    }
+    let draggingLayerIndex = null;
     shapeList.addEventListener("pointerdown", (event) => {
       const button = event.target.closest("button");
       if (button) return;
       const item = event.target.closest("[data-select-id]");
       if (!item) return;
-      event.preventDefault();
       state.selectedId = item.dataset.selectId;
       state.selectedPoint = null;
       refresh();
@@ -1371,6 +1654,51 @@
         refresh();
         return;
       }
+    });
+    shapeList.addEventListener("dragstart", (event) => {
+      const item = event.target.closest(".shape-item[data-array-index]");
+      if (!item) return;
+      draggingLayerIndex = Number(item.dataset.arrayIndex);
+      item.classList.add("dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", item.dataset.arrayIndex || "");
+      }
+    });
+    shapeList.addEventListener("dragover", (event) => {
+      const target = event.target.closest(".shape-item[data-array-index]");
+      if (!target) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      shapeList.querySelectorAll(".shape-item.drop-target").forEach((el) => el.classList.remove("drop-target"));
+      target.classList.add("drop-target");
+    });
+    shapeList.addEventListener("dragleave", (event) => {
+      const target = event.target.closest(".shape-item[data-array-index]");
+      if (target) target.classList.remove("drop-target");
+    });
+    shapeList.addEventListener("drop", (event) => {
+      const target = event.target.closest(".shape-item[data-array-index]");
+      if (!target) return;
+      event.preventDefault();
+      const targetIndex = Number(target.dataset.arrayIndex);
+      if (!Number.isInteger(draggingLayerIndex) || !Number.isInteger(targetIndex)) return;
+      const insertIndex = Math.max(0, Math.min(state.shapes.length - 1, targetIndex));
+      if (draggingLayerIndex !== insertIndex) {
+        commitHistory();
+      }
+      if (moveShapeLayer(draggingLayerIndex, insertIndex)) {
+        refresh();
+      } else {
+        refresh();
+      }
+    });
+    shapeList.addEventListener("dragend", () => {
+      draggingLayerIndex = null;
+      shapeList.querySelectorAll(".shape-item.dragging, .shape-item.drop-target").forEach((el) => {
+        el.classList.remove("dragging");
+        el.classList.remove("drop-target");
+      });
     });
 
     svgPreview.addEventListener("pointerdown", (event) => {
@@ -1402,6 +1730,51 @@
         tryMergeAtDragEnd();
         state.drag = null;
         state.snapCandidate = null;
+        state.hoverStack = null;
+        refresh();
+        return;
+      }
+      const stackOptionNode = event.target.closest("[data-stack-index]");
+      if (stackOptionNode && state.hoverStack) {
+        event.preventDefault();
+        const index = Number(stackOptionNode.dataset.stackIndex);
+        const option = Number.isInteger(index) ? state.hoverStack.options[index] : null;
+        if (!option) return;
+        if (option.kind === "midpoint") {
+          commitHistory();
+          let createdHandle = null;
+          updateShapeById(option.shapeId, (shape) => {
+            const created = insertPointOnConnection(shape, option.a, option.b, { x: option.x, y: option.y });
+            createdHandle = created?.handle ?? null;
+            return shape;
+          });
+          if (createdHandle) {
+            state.selectedId = option.shapeId;
+            state.selectedPoint = { shapeId: option.shapeId, handle: createdHandle };
+            state.selectedEdge = null;
+            state.drag = { shapeId: option.shapeId, handle: createdHandle };
+          }
+        } else if (option.kind === "handle") {
+          const shapeId = option.shapeId;
+          const sourceHandle = option.handle;
+          state.selectedId = shapeId;
+          state.selectedPoint = isVertexHandle(sourceHandle) ? { shapeId, handle: sourceHandle } : null;
+          state.selectedEdge = null;
+          commitHistory();
+          const dragState = { shapeId, handle: sourceHandle };
+          const dragShape = state.shapes.find((shape) => shape.id === shapeId);
+          if (sourceHandle === "scale" && dragShape?.type === "ellipse") {
+            dragState.baseRx = dragShape.rx;
+            dragState.baseRy = dragShape.ry;
+            dragState.baseDistance = Math.hypot(dragShape.rx, dragShape.ry) || 1;
+          } else if (sourceHandle === "scale" && dragShape?.type === "circle") {
+            dragState.baseR = dragShape.r;
+            dragState.baseDistance = dragShape.r || 1;
+          }
+          state.drag = dragState;
+        }
+        state.hoverStack = null;
+        state.hoverMidpoint = null;
         refresh();
         return;
       }
@@ -1430,6 +1803,7 @@
         state.drag = { shapeId, handle: createdHandle };
         state.snapCandidate = null;
         state.hoverMidpoint = null;
+        state.hoverStack = null;
         refresh();
         return;
       }
@@ -1463,6 +1837,7 @@
               state.drag = { shapeId, handle: createdHandle, floating: true };
               state.snapCandidate = null;
               state.lastHandleClick = null;
+              state.hoverStack = null;
               refresh();
               return;
             }
@@ -1488,6 +1863,7 @@
           dragState.baseDistance = dragShape.r || 1;
         }
         state.drag = dragState;
+        state.hoverStack = null;
         refresh();
         return;
       }
@@ -1502,6 +1878,7 @@
           a: Number(edgeNode.dataset.edgeA),
           b: Number(edgeNode.dataset.edgeB)
         };
+        state.hoverStack = null;
         refresh();
         return;
       }
@@ -1511,6 +1888,7 @@
         event.preventDefault();
         state.lastHandleClick = null;
         state.hoverMidpoint = null;
+        state.hoverStack = null;
         state.selectedId = shapeNode.dataset.shapeId;
         state.selectedPoint = null;
         state.selectedEdge = null;
@@ -1521,6 +1899,7 @@
       if (!state.drag) {
         state.lastHandleClick = null;
         state.hoverMidpoint = null;
+        state.hoverStack = null;
         state.selectedId = null;
         state.selectedPoint = null;
         state.selectedEdge = null;
@@ -1535,16 +1914,26 @@
       });
       state.snapCandidate = getMergeCandidateForCurrentDrag();
       state.hoverMidpoint = null;
+      state.hoverStack = null;
       refresh();
     });
     svgPreview.addEventListener("pointermove", (event) => {
       if (state.drag) return;
-      const hovered = getHoveredMidpoint(getSvgPoint(event));
+      const cursor = getSvgPoint(event);
+      const previousStack = state.hoverStack;
+      if (previousStack && isInsideHoverStackInteractionZone(cursor)) state.hoverStack = previousStack;
+      else {
+        const nextStack = buildHoverStack(cursor);
+        state.hoverStack = nextStack || null;
+      }
+      const hovered = getHoveredMidpoint(cursor);
       const current = state.hoverMidpoint;
       const changed = (!current && hovered)
         || (current && !hovered)
         || (current && hovered && (current.shapeId !== hovered.shapeId || current.key !== hovered.key));
-      if (!changed) return;
+      const stackChanged = (previousStack && !state.hoverStack) || (!previousStack && state.hoverStack)
+        || (previousStack && state.hoverStack && previousStack.options.length !== state.hoverStack.options.length);
+      if (!changed && !stackChanged) return;
       state.hoverMidpoint = hovered ? { shapeId: hovered.shapeId, a: hovered.a, b: hovered.b, key: hovered.key, x: hovered.x, y: hovered.y } : null;
       refresh();
     });
