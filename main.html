@@ -140,7 +140,42 @@
       display: flex;
       flex-wrap: wrap;
       align-items: end;
-      gap: 14px;
+      gap: 10px;
+    }
+    .toggle-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .toggle-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(122, 92, 48, 0.18);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--text);
+      font-size: 0.88rem;
+      line-height: 1;
+      white-space: nowrap;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-chip:hover {
+      transform: translateY(-1px);
+      border-color: rgba(177, 77, 36, 0.28);
+      background: rgba(255, 250, 245, 0.95);
+    }
+    .toggle-chip input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--accent);
+      user-select: none;
     }
     .viewer-top-canvas {
       margin-top: 10px;
@@ -164,7 +199,7 @@
     }
     .viewer-stage { padding: 18px; min-height: 0; }
     .svg-wrap {
-      width: 100%; height: 100%; min-height: 540px; border: 1px solid rgba(122, 92, 48, 0.22); border-radius: 22px; overflow: auto;
+      width: 100%; height: 100%; min-height: 540px; border: 1px solid rgba(122, 92, 48, 0.22); border-radius: 0; overflow: auto;
       background: linear-gradient(180deg, #fffdf9, #f7efdf); position: relative;
     }
     #svgPreview { width: auto; height: auto; display: block; touch-action: none; user-select: none; max-width: none; max-height: none; }
@@ -322,12 +357,15 @@
     <main class="panel viewer">
       <section class="viewer-top">
         <div class="viewer-top-main">
-          <div class="field"><label><input id="toggleGrid" type="checkbox" checked> Mostrar grade</label></div>
-          <div class="field"><label><input id="toggleAxes" type="checkbox" checked> Mostrar eixos</label></div>
-          <div class="field"><label><input id="toggleCoords" type="checkbox" checked> Mostrar coordenadas</label></div>
-          <div class="field"><label><input id="togglePoints" type="checkbox" checked> Mostrar pontos</label></div>
-          <button type="button" id="downloadSvgBtn" class="secondary">Baixar SVG</button>
-          <button type="button" id="copySvgBtn" class="secondary">Copiar SVG</button>
+          <div class="toggle-strip">
+            <label class="toggle-chip"><input id="toggleGrid" type="checkbox" checked><span>Grade</span></label>
+            <label class="toggle-chip"><input id="toggleRuler" type="checkbox" checked><span>Régua</span></label>
+            <label class="toggle-chip"><input id="toggleCoords" type="checkbox" checked><span>Coordenadas</span></label>
+            <label class="toggle-chip"><input id="togglePoints" type="checkbox" checked><span>Pontos</span></label>
+          </div>
+          <button type="button" id="importSvgBtn" class="secondary">Importar</button>
+          <button type="button" id="downloadSvgBtn" class="secondary">Baixar</button>
+          <button type="button" id="copySvgBtn" class="secondary">Copiar</button>
         </div>
         <div class="viewer-top-canvas">
           <div class="canvas-inline">
@@ -355,6 +393,8 @@
     </main>
   </div>
 
+  <input id="importSvgInput" type="file" accept=".svg,image/svg+xml" hidden>
+
   <script>
     const state = { svgWidth: 900, svgHeight: 600, gridStep: 25, shapes: [], selectedId: null, selectedPoint: null, selectedEdge: null, history: [], future: [], drag: null, snapCandidate: null, lastHandleClick: null, hoverMidpoint: null, hoverStack: null };
     const $ = (selector) => document.querySelector(selector);
@@ -366,6 +406,8 @@
     const editEmpty = $("#editEmpty");
     const undoBtn = $("#undoBtn");
     const redoBtn = $("#redoBtn");
+    const importSvgBtn = $("#importSvgBtn");
+    const importSvgInput = $("#importSvgInput");
 
     const createFieldGroups = { line: $("#lineFields"), rect: $("#rectFields"), circle: $("#circleFields"), ellipse: $("#ellipseFields"), polygon: $("#pointsFields"), polyline: $("#pointsFields") };
     const editFieldGroups = { line: $("#editLineFields"), rect: $("#editRectFields"), circle: $("#editCircleFields"), ellipse: $("#editEllipseFields"), polygon: $("#editPointsFields"), polyline: $("#editPointsFields") };
@@ -411,6 +453,112 @@
       return text.trim().split(/\s+/).map((pair) => pair.split(",").map(Number)).filter((pair) => pair.length === 2 && pair.every(Number.isFinite)).map(([x, y]) => ({ x, y }));
     }
     function pointsToText(points) { return points.map((point) => `${point.x},${point.y}`).join(" "); }
+    function parseSvgNumber(value, fallback = 0) {
+      const num = Number.parseFloat(String(value ?? "").trim());
+      return Number.isFinite(num) ? num : fallback;
+    }
+    function parseViewBox(svgEl) {
+      const raw = svgEl.getAttribute("viewBox");
+      if (!raw) return null;
+      const parts = raw.trim().split(/[\s,]+/).map(Number);
+      if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
+      return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
+    }
+    function applyTransformPoint(point, transform) {
+      if (!transform) return point;
+      let x = point.x;
+      let y = point.y;
+      for (const match of transform.matchAll(/(translate|scale)\(([^)]+)\)/g)) {
+        const [, type, argsRaw] = match;
+        const args = argsRaw.split(/[\s,]+/).map(Number).filter(Number.isFinite);
+        if (type === "translate") {
+          x += args[0] ?? 0;
+          y += args[1] ?? 0;
+        } else if (type === "scale") {
+          const sx = args[0] ?? 1;
+          const sy = args[1] ?? sx;
+          x *= sx;
+          y *= sy;
+        }
+      }
+      return { x: Math.round(x), y: Math.round(y) };
+    }
+    function applyTransformPoints(points, transform) {
+      return points.map((point) => applyTransformPoint(point, transform));
+    }
+    function parsePointsAttribute(value) {
+      return String(value ?? "")
+        .trim()
+        .split(/[\s]+/)
+        .map((pair) => pair.split(",").map(Number))
+        .filter((pair) => pair.length === 2 && pair.every(Number.isFinite))
+        .map(([x, y]) => ({ x: Math.round(x), y: Math.round(y) }));
+    }
+    function importSvgText(svgText) {
+      const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
+      const parserError = doc.querySelector("parsererror");
+      if (parserError) throw new Error("SVG inválido.");
+      const svgEl = doc.querySelector("svg");
+      if (!svgEl) throw new Error("O arquivo não contém um elemento SVG válido.");
+      const viewBox = parseViewBox(svgEl);
+      const importedShapes = [];
+      const elements = svgEl.querySelectorAll("rect, circle, ellipse, line, polygon, polyline");
+      elements.forEach((el) => {
+        const tag = el.tagName.toLowerCase();
+        const fill = el.getAttribute("fill") ?? "#000000";
+        const stroke = el.getAttribute("stroke") ?? "#000000";
+        const strokeWidth = toNumber(el.getAttribute("stroke-width"), 1);
+        const opacity = toNumber(el.getAttribute("opacity"), 1);
+        const transform = el.getAttribute("transform");
+        const make = (shape) => importedShapes.push({ id: uid(), ...shape, strokeWidth, opacity });
+        if (tag === "rect") {
+          const x = parseSvgNumber(el.getAttribute("x"));
+          const y = parseSvgNumber(el.getAttribute("y"));
+          const width = parseSvgNumber(el.getAttribute("width"), 0);
+          const height = parseSvgNumber(el.getAttribute("height"), 0);
+          const points = applyTransformPoints([{ x, y }, { x: x + width, y }, { x: x + width, y: y + height }, { x, y: y + height }], transform);
+          make({ type: "polygon", points, fill, stroke });
+        } else if (tag === "circle") {
+          const cx = parseSvgNumber(el.getAttribute("cx"));
+          const cy = parseSvgNumber(el.getAttribute("cy"));
+          const r = parseSvgNumber(el.getAttribute("r"), 0);
+          const center = applyTransformPoint({ x: cx, y: cy }, transform);
+          const edgeX = applyTransformPoint({ x: cx + r, y: cy }, transform);
+          const edgeY = applyTransformPoint({ x: cx, y: cy + r }, transform);
+          make({ type: "ellipse", cx: center.x, cy: center.y, rx: Math.max(1, Math.abs(edgeX.x - center.x)), ry: Math.max(1, Math.abs(edgeY.y - center.y)), fill, stroke });
+        } else if (tag === "ellipse") {
+          const cx = parseSvgNumber(el.getAttribute("cx"));
+          const cy = parseSvgNumber(el.getAttribute("cy"));
+          const rx = parseSvgNumber(el.getAttribute("rx"), 0);
+          const ry = parseSvgNumber(el.getAttribute("ry"), 0);
+          const center = applyTransformPoint({ x: cx, y: cy }, transform);
+          const edgeX = applyTransformPoint({ x: cx + rx, y: cy }, transform);
+          const edgeY = applyTransformPoint({ x: cx, y: cy + ry }, transform);
+          make({ type: "ellipse", cx: center.x, cy: center.y, rx: Math.max(1, Math.abs(edgeX.x - center.x)), ry: Math.max(1, Math.abs(edgeY.y - center.y)), fill, stroke });
+        } else if (tag === "line") {
+          const x1 = parseSvgNumber(el.getAttribute("x1"));
+          const y1 = parseSvgNumber(el.getAttribute("y1"));
+          const x2 = parseSvgNumber(el.getAttribute("x2"));
+          const y2 = parseSvgNumber(el.getAttribute("y2"));
+          const p1 = applyTransformPoint({ x: x1, y: y1 }, transform);
+          const p2 = applyTransformPoint({ x: x2, y: y2 }, transform);
+          make({ type: "line", x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, fill: "none", stroke });
+        } else if (tag === "polygon" || tag === "polyline") {
+          const points = applyTransformPoints(parsePointsAttribute(el.getAttribute("points")), transform);
+          make({ type: tag, points, fill: tag === "polyline" ? "none" : fill, stroke });
+        }
+      });
+      if (!importedShapes.length) throw new Error("Nenhuma forma compatível foi encontrada no SVG.");
+      if (viewBox) {
+        state.svgWidth = Math.max(100, Math.round(viewBox.width));
+        state.svgHeight = Math.max(100, Math.round(viewBox.height));
+        $("#svgWidth").value = state.svgWidth;
+        $("#svgHeight").value = state.svgHeight;
+      }
+      commitHistory();
+      setShapes(importedShapes, false);
+      refresh();
+    }
     function currentStyle() {
       return { fill: $("#fillColor").value, stroke: $("#strokeColor").value, strokeWidth: toNumber($("#strokeWidth").value, 2), opacity: toNumber($("#shapeOpacity").value, 1) };
     }
@@ -474,10 +622,11 @@
     }
     function shapeToSvg(shape, selected = false) {
       const extra = selected ? `filter="drop-shadow(0 0 5px rgba(177,77,36,0.35))"` : null;
-      const styleAttrs = [`fill="${shape.fill}"`, `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`];
+      const strokeStyleAttrs = ['stroke-linejoin="round"', 'stroke-linecap="round"'];
+      const styleAttrs = [`fill="${shape.fill}"`, `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`, ...strokeStyleAttrs, 'style="cursor: pointer;"'];
       switch (shape.type) {
         case "line":
-          return svgTag("line", [`data-shape-id="${shape.id}"`, `x1="${shape.x1}"`, `y1="${shape.y1}"`, `x2="${shape.x2}"`, `y2="${shape.y2}"`, 'fill="none"', `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`, ...(extra ? [extra] : [])]);
+          return svgTag("line", [`data-shape-id="${shape.id}"`, `x1="${shape.x1}"`, `y1="${shape.y1}"`, `x2="${shape.x2}"`, `y2="${shape.y2}"`, 'fill="none"', `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`, ...strokeStyleAttrs, 'style="cursor: pointer;"', ...(extra ? [extra] : [])]);
         case "rect":
           return svgTag("rect", [`data-shape-id="${shape.id}"`, `x="${shape.x}"`, `y="${shape.y}"`, `width="${shape.width}"`, `height="${shape.height}"`, ...styleAttrs, ...(extra ? [extra] : [])]);
         case "circle":
@@ -487,11 +636,11 @@
         case "polygon":
           return svgTag("polygon", [`data-shape-id="${shape.id}"`, `points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}"`, ...styleAttrs, ...(extra ? [extra] : [])]);
         case "polyline":
-          return svgTag("polyline", [`data-shape-id="${shape.id}"`, `points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}"`, 'fill="none"', `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`, ...(extra ? [extra] : [])]);
+          return svgTag("polyline", [`data-shape-id="${shape.id}"`, `points="${shape.points.map((p) => `${p.x},${p.y}`).join(" ")}"`, 'fill="none"', `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`, ...strokeStyleAttrs, 'style="cursor: pointer;"', ...(extra ? [extra] : [])]);
         case "graph": {
           const loops = shape.fill === "none" ? [] : getGraphFillLoops(shape);
-          const fillMarkup = loops.map((loop) => svgTag("polygon", [`data-shape-id="${shape.id}"`, `points="${loop.map((p) => `${p.x},${p.y}`).join(" ")}"`, `fill="${shape.fill}"`, 'stroke="none"', `opacity="${shape.opacity}"`, ...(extra ? [extra] : [])])).join("\n");
-          const edgeMarkup = shape.edges.map(([a, b]) => svgTag("line", [`data-shape-id="${shape.id}"`, `x1="${shape.points[a].x}"`, `y1="${shape.points[a].y}"`, `x2="${shape.points[b].x}"`, `y2="${shape.points[b].y}"`, 'fill="none"', `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`, ...(extra ? [extra] : [])])).join("\n");
+          const fillMarkup = loops.map((loop) => svgTag("polygon", [`data-shape-id="${shape.id}"`, `points="${loop.map((p) => `${p.x},${p.y}`).join(" ")}"`, `fill="${shape.fill}"`, 'stroke="none"', `opacity="${shape.opacity}"`, ...strokeStyleAttrs, 'style="cursor: pointer;"', ...(extra ? [extra] : [])])).join("\n");
+          const edgeMarkup = shape.edges.map(([a, b]) => svgTag("line", [`data-shape-id="${shape.id}"`, `x1="${shape.points[a].x}"`, `y1="${shape.points[a].y}"`, `x2="${shape.points[b].x}"`, `y2="${shape.points[b].y}"`, 'fill="none"', `stroke="${shape.stroke}"`, `stroke-width="${shape.strokeWidth}"`, `opacity="${shape.opacity}"`, ...strokeStyleAttrs, 'style="cursor: pointer;"', ...(extra ? [extra] : [])])).join("\n");
           return [fillMarkup, edgeMarkup].filter(Boolean).join("\n");
         }
         default: return "";
@@ -923,6 +1072,37 @@
       Object.assign(shape, graphShape);
       return { handle: `p${nextIndex}` };
     }
+    function pruneGraphOrphans(graphShape) {
+      if (!graphShape || graphShape.type !== "graph") return graphShape;
+      const used = new Set();
+      for (const [a, b] of graphShape.edges) {
+        if (Number.isInteger(a)) used.add(a);
+        if (Number.isInteger(b)) used.add(b);
+      }
+      const points = [];
+      const remap = new Map();
+      graphShape.points.forEach((point, index) => {
+        if (!used.has(index)) return;
+        remap.set(index, points.length);
+        points.push({ x: point.x, y: point.y });
+      });
+      const edges = [];
+      const seen = new Set();
+      for (const [a, b] of graphShape.edges) {
+        if (!remap.has(a) || !remap.has(b)) continue;
+        const na = remap.get(a);
+        const nb = remap.get(b);
+        if (na === nb) continue;
+        const key = na < nb ? `${na}|${nb}` : `${nb}|${na}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edges.push([na, nb]);
+      }
+      if (!points.length || !edges.length) return null;
+      graphShape.points = points;
+      graphShape.edges = edges;
+      return graphShape;
+    }
     function deleteSelectedEdge() {
       const edge = state.selectedEdge;
       if (!edge) return false;
@@ -939,8 +1119,7 @@
         graphShape.edges = graphShape.edges.filter(([a, b]) => edgeKey(a, b) !== key);
         removed = graphShape.edges.length < before;
         if (!removed) return shape;
-        if (!graphShape.edges.length) return null;
-        return graphShape;
+        return pruneGraphOrphans(graphShape);
       });
       state.shapes = state.shapes.filter(Boolean);
       state.selectedPoint = null;
@@ -1403,7 +1582,7 @@
       const width = state.svgWidth;
       const height = state.svgHeight;
       const showGrid = $("#toggleGrid").checked;
-      const showAxes = $("#toggleAxes").checked;
+      const showRuler = $("#toggleRuler").checked;
       const showCoords = $("#toggleCoords").checked;
       const showPoints = $("#togglePoints").checked;
       const step = Math.max(5, state.gridStep);
@@ -1416,10 +1595,31 @@
         for (let x = 0; x <= width; x += step) gridMarkup += `<line x1="${x}" y1="0" x2="${x}" y2="${height}" stroke="rgba(90, 74, 42, 0.14)" stroke-width="1" />`;
         for (let y = 0; y <= height; y += step) gridMarkup += `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="rgba(90, 74, 42, 0.14)" stroke-width="1" />`;
       }
-      const axesMarkup = showAxes
-        ? `<line x1="0" y1="0" x2="${width}" y2="0" stroke="#1b6b73" stroke-width="2" /><line x1="0" y1="0" x2="0" y2="${height}" stroke="#1b6b73" stroke-width="2" /><text x="8" y="18" font-size="13" fill="#1b6b73">Origem (0,0)</text>`
-        : "";
+      const labelStride = step < 25 ? (step <= 12 ? 5 : step <= 20 ? 4 : 3) : 1;
+      const scaleMarkup = showRuler ? `
+        <g pointer-events="none" fill="#6f5a3f" font-size="11" font-family="system-ui, sans-serif">
+          ${Array.from({ length: Math.floor(width / step) + 1 }, (_, index) => {
+            const x = index * step;
+            if (x > width) return "";
+            if (index % labelStride !== 0) return "";
+            return `<text x="${x + 2}" y="13">${x}</text>`;
+          }).join("")}
+          ${Array.from({ length: Math.floor(height / step) + 1 }, (_, index) => {
+            const y = index * step;
+            if (y > height) return "";
+            if (y === 0) return "";
+            if (index % labelStride !== 0) return "";
+            return `<text x="3" y="${y + 12}">${y}</text>`;
+          }).join("")}
+        </g>
+      ` : "";
       const shapesMarkup = state.shapes.map((shape) => shapeToSvg(shape, shape.id === state.selectedId)).join("\n");
+      const lineHitboxMarkup = state.shapes
+        .filter((shape) => shape.type === "line")
+        .map((shape) => `
+          <line data-shape-id="${shape.id}" x1="${shape.x1}" y1="${shape.y1}" x2="${shape.x2}" y2="${shape.y2}"
+            stroke="rgba(0,0,0,0.001)" stroke-width="22" stroke-linecap="round" pointer-events="stroke" style="cursor: pointer;" />
+        `).join("\n");
       const pointHandleChunks = [];
       const labelItems = [];
       for (const shape of state.shapes) {
@@ -1481,8 +1681,9 @@
       svgPreview.innerHTML = `
         <rect x="0" y="0" width="${width}" height="${height}" fill="#fffdfa" />
         ${gridMarkup}
-        ${axesMarkup}
+        ${scaleMarkup}
         ${shapesMarkup}
+        ${lineHitboxMarkup}
         ${edgeHandleMarkup}
         ${pointsMarkup}
         ${midpointMarkup}
@@ -1974,6 +2175,18 @@
         alert("Não consegui copiar automaticamente. Você pode copiar manualmente no bloco abaixo.");
       }
     });
+    $("#importSvgBtn").addEventListener("click", () => importSvgInput.click());
+    importSvgInput.addEventListener("change", async () => {
+      const file = importSvgInput.files?.[0];
+      importSvgInput.value = "";
+      if (!file) return;
+      try {
+        const text = await file.text();
+        importSvgText(text);
+      } catch (error) {
+        alert(error?.message || "Não consegui importar esse SVG.");
+      }
+    });
     $("#downloadSvgBtn").addEventListener("click", () => {
       const svgText = svgCode.textContent;
       const blob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
@@ -1999,7 +2212,7 @@
         refresh();
       });
     });
-    ["#toggleGrid", "#toggleAxes", "#toggleCoords", "#togglePoints"].forEach((selector) => {
+    ["#toggleGrid", "#toggleRuler", "#toggleCoords", "#togglePoints"].forEach((selector) => {
       $(selector).addEventListener("input", refresh);
       $(selector).addEventListener("change", refresh);
     });
