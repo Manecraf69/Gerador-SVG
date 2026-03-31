@@ -52,6 +52,13 @@
       border-bottom: 1px solid rgba(122, 92, 48, 0.14);
     }
     .section:last-child { border-bottom: 0; }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
     h1, h2, h3 { margin: 0 0 10px; line-height: 1.1; }
     h1 { font-size: 1.6rem; }
     h2 { font-size: 1.05rem; }
@@ -233,6 +240,9 @@
       margin-top: 10px;
       padding-top: 10px;
       border-top: 1px dashed rgba(122, 92, 48, 0.2);
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
     .canvas-inline {
       display: flex;
@@ -241,7 +251,16 @@
       white-space: nowrap;
       font-size: 0.9rem;
       color: var(--muted);
-      margin-right: 10px;
+      flex-wrap: wrap;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .canvas-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+      margin-left: auto;
     }
     .canvas-inline input {
       width: 82px;
@@ -251,10 +270,22 @@
     }
     .viewer-stage { padding: 18px; min-height: 0; }
     .svg-wrap {
-      width: 100%; height: 100%; min-height: 540px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 0; overflow: auto;
-      background: linear-gradient(180deg, #17212a, #1d2934); position: relative;
+      width: 100%;
+      height: min(62vh, 640px);
+      min-height: 420px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 0;
+      overflow: hidden;
+      background: linear-gradient(180deg, #17212a, #1d2934);
+      position: relative;
     }
-    #svgPreview { width: auto; height: auto; display: block; touch-action: none; user-select: none; max-width: none; max-height: none; }
+    #svgPreview {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      user-select: none;
+    }
     .viewer-bottom { padding: 18px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
     .code-box {
       width: 100%; min-height: 180px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.08); background: #0f1720;
@@ -262,6 +293,19 @@
     }
     .hint { margin-top: 8px; font-size: 0.84rem; color: var(--muted); }
     .hidden { display: none; }
+    .section-toggle {
+      width: 36px;
+      min-width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--panel-strong);
+      color: var(--text);
+      line-height: 1;
+    }
     .subtle-box {
       border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 16px; padding: 12px; background: rgba(255, 255, 255, 0.06); color: var(--muted);
     }
@@ -301,7 +345,7 @@
     @media (max-width: 1100px) {
       .app { grid-template-columns: 1fr; }
       .sidebar, .viewer { min-height: auto; }
-      .svg-wrap { min-height: 440px; }
+      .svg-wrap { height: min(56vh, 520px); min-height: 360px; }
     }
     @media (max-width: 640px) {
       .controls-grid, .canvas-grid, .style-grid, .viewer-top { grid-template-columns: 1fr; }
@@ -318,62 +362,67 @@
       </section>
 
       <section class="section">
-        <h2>Novo elemento</h2>
-        <div class="controls-grid">
-          <div class="field full">
-            <label for="shapeType">Tipo</label>
-            <select id="shapeType">
-              <option value="line">Linha</option>
-              <option value="rect">Retângulo</option>
-              <option value="circle">Círculo</option>
-              <option value="ellipse">Elipse</option>
-              <option value="polygon">Polígono</option>
-            </select>
+        <div class="section-header">
+          <h2>Novo elemento</h2>
+          <button type="button" id="toggleCreatePanelBtn" class="section-toggle" aria-expanded="false" aria-controls="createPanel">\/</button>
+        </div>
+        <div id="createPanel" class="hidden">
+          <div class="controls-grid">
+            <div class="field full">
+              <label for="shapeType">Tipo</label>
+              <select id="shapeType">
+                <option value="line">Linha</option>
+                <option value="rect">Retângulo</option>
+                <option value="circle">Círculo</option>
+                <option value="ellipse">Elipse</option>
+                <option value="polygon">Polígono</option>
+              </select>
+            </div>
+
+            <div id="lineFields" class="controls-grid field-group full">
+              <div class="field"><label for="x1">x1</label><input id="x1" type="number" value="80"></div>
+              <div class="field"><label for="y1">y1</label><input id="y1" type="number" value="80"></div>
+              <div class="field"><label for="x2">x2</label><input id="x2" type="number" value="280"></div>
+              <div class="field"><label for="y2">y2</label><input id="y2" type="number" value="180"></div>
+            </div>
+
+            <div id="rectFields" class="controls-grid field-group full hidden">
+              <div class="field"><label for="rectX">x</label><input id="rectX" type="number" value="120"></div>
+              <div class="field"><label for="rectY">y</label><input id="rectY" type="number" value="100"></div>
+              <div class="field"><label for="rectWidth">largura</label><input id="rectWidth" type="number" value="220"></div>
+              <div class="field"><label for="rectHeight">altura</label><input id="rectHeight" type="number" value="140"></div>
+            </div>
+
+            <div id="circleFields" class="controls-grid field-group full hidden">
+              <div class="field"><label for="circleCx">cx</label><input id="circleCx" type="number" value="220"></div>
+              <div class="field"><label for="circleCy">cy</label><input id="circleCy" type="number" value="160"></div>
+              <div class="field"><label for="circleR">raio</label><input id="circleR" type="number" value="90"></div>
+            </div>
+
+            <div id="ellipseFields" class="controls-grid field-group full hidden">
+              <div class="field"><label for="ellipseCx">cx</label><input id="ellipseCx" type="number" value="240"></div>
+              <div class="field"><label for="ellipseCy">cy</label><input id="ellipseCy" type="number" value="180"></div>
+              <div class="field"><label for="ellipseRx">rx</label><input id="ellipseRx" type="number" value="130"></div>
+              <div class="field"><label for="ellipseRy">ry</label><input id="ellipseRy" type="number" value="80"></div>
+            </div>
+            <div id="pointsFields" class="field full hidden">
+              <label for="pointsInput">Pontos</label>
+              <textarea id="pointsInput">100,100 220,60 310,160 240,260 110,210</textarea>
+            </div>
+
+            <div class="style-grid full">
+              <div class="field"><label for="strokeColor">Borda</label><input id="strokeColor" type="color" value="#8a3d1e"></div>
+              <div class="field"><label for="fillColor">Preenchimento</label><input id="fillColor" type="color" value="#f4b183"></div>
+              <div class="field"><label for="strokeWidth">Espessura</label><input id="strokeWidth" type="number" min="1" value="3"></div>
+              <div class="field"><label for="shapeOpacity">Opacidade</label><input id="shapeOpacity" type="number" min="0" max="1" step="0.1" value="0.85"></div>
+            </div>
           </div>
 
-          <div id="lineFields" class="controls-grid field-group full">
-            <div class="field"><label for="x1">x1</label><input id="x1" type="number" value="80"></div>
-            <div class="field"><label for="y1">y1</label><input id="y1" type="number" value="80"></div>
-            <div class="field"><label for="x2">x2</label><input id="x2" type="number" value="280"></div>
-            <div class="field"><label for="y2">y2</label><input id="y2" type="number" value="180"></div>
-          </div>
-
-          <div id="rectFields" class="controls-grid field-group full hidden">
-            <div class="field"><label for="rectX">x</label><input id="rectX" type="number" value="120"></div>
-            <div class="field"><label for="rectY">y</label><input id="rectY" type="number" value="100"></div>
-            <div class="field"><label for="rectWidth">largura</label><input id="rectWidth" type="number" value="220"></div>
-            <div class="field"><label for="rectHeight">altura</label><input id="rectHeight" type="number" value="140"></div>
-          </div>
-
-          <div id="circleFields" class="controls-grid field-group full hidden">
-            <div class="field"><label for="circleCx">cx</label><input id="circleCx" type="number" value="220"></div>
-            <div class="field"><label for="circleCy">cy</label><input id="circleCy" type="number" value="160"></div>
-            <div class="field"><label for="circleR">raio</label><input id="circleR" type="number" value="90"></div>
-          </div>
-
-          <div id="ellipseFields" class="controls-grid field-group full hidden">
-            <div class="field"><label for="ellipseCx">cx</label><input id="ellipseCx" type="number" value="240"></div>
-            <div class="field"><label for="ellipseCy">cy</label><input id="ellipseCy" type="number" value="180"></div>
-            <div class="field"><label for="ellipseRx">rx</label><input id="ellipseRx" type="number" value="130"></div>
-            <div class="field"><label for="ellipseRy">ry</label><input id="ellipseRy" type="number" value="80"></div>
-          </div>
-          <div id="pointsFields" class="field full hidden">
-            <label for="pointsInput">Pontos</label>
-            <textarea id="pointsInput">100,100 220,60 310,160 240,260 110,210</textarea>
-          </div>
-
-          <div class="style-grid full">
-            <div class="field"><label for="strokeColor">Borda</label><input id="strokeColor" type="color" value="#8a3d1e"></div>
-            <div class="field"><label for="fillColor">Preenchimento</label><input id="fillColor" type="color" value="#f4b183"></div>
-            <div class="field"><label for="strokeWidth">Espessura</label><input id="strokeWidth" type="number" min="1" value="3"></div>
-            <div class="field"><label for="shapeOpacity">Opacidade</label><input id="shapeOpacity" type="number" min="0" max="1" step="0.1" value="0.85"></div>
+          <div class="buttons">
+            <button type="button" id="addShapeBtn" class="primary">Adicionar</button>
           </div>
         </div>
-
         <div class="buttons">
-          <button type="button" id="addShapeBtn" class="primary">Adicionar</button>
-          <button type="button" id="undoBtn" class="secondary">Voltar</button>
-          <button type="button" id="redoBtn" class="secondary">Avançar</button>
           <button type="button" id="loadDemoBtn" class="secondary">Carregar exemplo</button>
           <button type="button" id="clearAllBtn" class="danger">Limpar tudo</button>
         </div>
@@ -421,6 +470,10 @@
             <span>pixels | Grade</span>
             <input id="gridStep" type="number" min="5" value="25" aria-label="Tamanho da grade">
             <span>pixels</span>
+          </div>
+          <div class="canvas-actions">
+            <button type="button" id="undoBtn" class="secondary" aria-label="Voltar">↶</button>
+            <button type="button" id="redoBtn" class="secondary" aria-label="Avançar">↷</button>
           </div>
         </div>
       </section>
@@ -491,12 +544,15 @@
   <input id="importSvgInput" type="file" accept=".svg,image/svg+xml" hidden>
 
   <script>
-    const state = { svgWidth: 900, svgHeight: 600, gridStep: 25, shapes: [], selectedId: null, selectedPoint: null, selectedEdge: null, history: [], future: [], drag: null, snapCandidate: null, lastHandleClick: null, hoverMidpoint: null, hoverStack: null };
+    const state = { svgWidth: 900, svgHeight: 600, gridStep: 25, shapes: [], selectedId: null, selectedPoint: null, selectedEdge: null, history: [], future: [], drag: null, snapCandidate: null, lastHandleClick: null, hoverMidpoint: null, hoverStack: null, camera: { x: 0, y: 0, zoom: 1 }, pan: null, panIntent: null, suppressNextSvgClick: false };
     const $ = (selector) => document.querySelector(selector);
     const svgPreview = $("#svgPreview");
+    const svgWrap = $(".svg-wrap");
     const svgCode = $("#svgCode");
     const shapeList = $("#shapeList");
     const shapeType = $("#shapeType");
+    const createPanel = $("#createPanel");
+    const toggleCreatePanelBtn = $("#toggleCreatePanelBtn");
     const editMenu = $("#editMenu");
     const editMenuTitle = $("#editMenuTitle");
     const editPanel = $("#editPanel");
@@ -513,7 +569,19 @@
     const editFieldGroups = { line: $("#editLineFields"), rect: $("#editRectFields"), circle: $("#editCircleFields"), ellipse: $("#editEllipseFields"), polygon: $("#editPointsFields") };
 
     function uid() { return `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`; }
+    function eventMatches(event, selector) {
+      for (const node of event.composedPath ? event.composedPath() : [event.target]) {
+        if (node?.matches?.(selector)) return node;
+      }
+      return null;
+    }
     function cloneShapes() { return structuredClone(state.shapes); }
+    function syncInteractionCursor() {
+      const cursor = state.pan ? "grabbing" : state.drag ? "grabbing" : state.panIntent ? "grab" : "default";
+      if (svgWrap) svgWrap.style.cursor = cursor;
+      svgPreview.style.cursor = cursor;
+      document.body.style.cursor = cursor;
+    }
     function setShapes(shapes, keepSelection = true) {
       state.shapes = shapes;
       if (keepSelection && state.selectedId && state.shapes.some((shape) => shape.id === state.selectedId)) return;
@@ -548,6 +616,28 @@
     function toNumber(value, fallback = 0) {
       const num = Number(value);
       return Number.isFinite(num) ? num : fallback;
+    }
+    function getViewportSize() {
+      const rect = $(".svg-wrap")?.getBoundingClientRect();
+      return rect ? { width: rect.width, height: rect.height } : { width: 1, height: 1 };
+    }
+    function fitCameraToCanvas() {
+      const { width: viewWidth, height: viewHeight } = getViewportSize();
+      const canvasWidth = Math.max(1, state.svgWidth);
+      const canvasHeight = Math.max(1, state.svgHeight);
+      const zoom = Math.min(viewWidth / canvasWidth, viewHeight / canvasHeight, 1);
+      state.camera.zoom = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+      state.camera.x = Math.round((viewWidth - (canvasWidth * state.camera.zoom)) / 2);
+      state.camera.y = Math.round((viewHeight - (canvasHeight * state.camera.zoom)) / 2);
+    }
+    function isInsideCanvasBounds(point) {
+      return point.x >= 0 && point.y >= 0 && point.x <= state.svgWidth && point.y <= state.svgHeight;
+    }
+    function screenToWorld(point) {
+      return {
+        x: (point.x - state.camera.x) / state.camera.zoom,
+        y: (point.y - state.camera.y) / state.camera.zoom
+      };
     }
     function parsePoints(text) {
       return text.trim().split(/\s+/).map((pair) => pair.split(",").map(Number)).filter((pair) => pair.length === 2 && pair.every(Number.isFinite)).map(([x, y]) => ({ x, y }));
@@ -748,6 +838,11 @@
     function syncCreateFieldVisibility() {
       Object.values(createFieldGroups).forEach((group) => group.classList.add("hidden"));
       createFieldGroups[shapeType.value].classList.remove("hidden");
+    }
+    function syncCreatePanelVisibility() {
+      const isOpen = !createPanel.classList.contains("hidden");
+      toggleCreatePanelBtn.textContent = isOpen ? "/\\" : "\\/";
+      toggleCreatePanelBtn.setAttribute("aria-expanded", String(isOpen));
     }
     function syncEditFieldVisibility(type) {
       Object.values(editFieldGroups).forEach((group) => group.classList.add("hidden"));
@@ -1710,14 +1805,14 @@
       const showCoords = $("#toggleCoords").checked;
       const showPoints = $("#togglePoints").checked;
       const step = Math.max(5, state.gridStep);
-      svgPreview.setAttribute("viewBox", `0 0 ${width} ${height}`);
-      svgPreview.setAttribute("preserveAspectRatio", "none");
-      svgPreview.style.width = `${width}px`;
-      svgPreview.style.height = `${height}px`;
+      svgPreview.setAttribute("viewBox", `0 0 ${$(".svg-wrap")?.clientWidth || width} ${$(".svg-wrap")?.clientHeight || height}`);
+      svgPreview.removeAttribute("preserveAspectRatio");
+      svgPreview.style.width = "100%";
+      svgPreview.style.height = "100%";
       let gridMarkup = "";
       if (showGrid) {
-        for (let x = 0; x <= width; x += step) gridMarkup += `<line x1="${x}" y1="0" x2="${x}" y2="${height}" stroke="rgba(90, 74, 42, 0.14)" stroke-width="1" />`;
-        for (let y = 0; y <= height; y += step) gridMarkup += `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="rgba(90, 74, 42, 0.14)" stroke-width="1" />`;
+        for (let x = 0; x <= width; x += step) gridMarkup += `<line pointer-events="none" x1="${x}" y1="0" x2="${x}" y2="${height}" stroke="rgba(90, 74, 42, 0.14)" stroke-width="1" />`;
+        for (let y = 0; y <= height; y += step) gridMarkup += `<line pointer-events="none" x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="rgba(90, 74, 42, 0.14)" stroke-width="1" />`;
       }
       const labelStride = step < 25 ? (step <= 12 ? 5 : step <= 20 ? 4 : 3) : 1;
       const scaleMarkup = showRuler ? `
@@ -1805,17 +1900,21 @@
       const snapTextMarkup = state.snapCandidate
         ? `<g pointer-events="none"><rect x="${state.snapCandidate.point.x + 10}" y="${state.snapCandidate.point.y - 34}" rx="8" ry="8" width="102" height="24" fill="rgba(47,181,111,0.92)" /><text x="${state.snapCandidate.point.x + 18}" y="${state.snapCandidate.point.y - 18}" font-size="12" fill="#fff">juntar pontos</text></g>`
         : "";
+      const cameraTransform = `translate(${state.camera.x} ${state.camera.y}) scale(${state.camera.zoom})`;
       svgPreview.innerHTML = `
-        <rect x="0" y="0" width="${width}" height="${height}" fill="#fffdfa" />
-        ${gridMarkup}
-        ${scaleMarkup}
-        ${shapesMarkup}
-        ${lineHitboxMarkup}
-        ${edgeHandleMarkup}
-        ${pointsMarkup}
-        ${midpointMarkup}
-        ${stackMarkup}
-        ${snapTextMarkup}
+        <rect data-canvas-background="true" pointer-events="all" x="0" y="0" width="100%" height="100%" fill="#fffdfa" />
+        <g id="viewport" transform="${cameraTransform}">
+          <rect x="0" y="0" width="${width}" height="${height}" fill="#fffdfa" />
+          ${gridMarkup}
+          ${scaleMarkup}
+          ${shapesMarkup}
+          ${lineHitboxMarkup}
+          ${edgeHandleMarkup}
+          ${pointsMarkup}
+          ${midpointMarkup}
+          ${stackMarkup}
+          ${snapTextMarkup}
+        </g>
       `;
       svgCode.textContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">\n  ${shapesMarkup.split("\n").join("\n  ")}\n</svg>`;
     }
@@ -1828,13 +1927,14 @@
       renderList();
       fillEditPanel();
       renderSvg();
+      syncInteractionCursor();
       updateHistoryButtons();
     }
     function getSvgPoint(event) {
       const point = svgPreview.createSVGPoint();
       point.x = event.clientX;
       point.y = event.clientY;
-      return point.matrixTransform(svgPreview.getScreenCTM().inverse());
+      return screenToWorld(point.matrixTransform(svgPreview.getScreenCTM().inverse()));
     }
     function pointToSegmentDistance(point, a, b) {
       const dx = b.x - a.x;
@@ -1869,7 +1969,7 @@
         x = Math.round(x / step) * step;
         y = Math.round(y / step) * step;
       }
-      return { x: Math.max(0, Math.min(state.svgWidth, x)), y: Math.max(0, Math.min(state.svgHeight, y)) };
+      return { x, y };
     }
     function moveShape(shape, dx, dy) {
       if (shape.type === "line") {
@@ -1976,19 +2076,10 @@
       return true;
     }
     let draggingLayerIndex = null;
-    shapeList.addEventListener("pointerdown", (event) => {
-      const button = event.target.closest("button");
-      if (button) return;
-      const item = event.target.closest("[data-select-id]");
-      if (!item) return;
-      state.selectedId = item.dataset.selectId;
-      state.selectedPoint = null;
-      refresh();
-    });
-
     shapeList.addEventListener("click", (event) => {
       const button = event.target.closest("button");
       if (button) {
+        event.stopPropagation();
         const id = button.dataset.id;
         const action = button.dataset.action;
         const target = state.shapes.find((shape) => shape.id === id);
@@ -2007,6 +2098,13 @@
         refresh();
         return;
       }
+      const item = event.target.closest("[data-select-id]");
+      if (!item) return;
+      event.stopPropagation();
+      state.selectedId = item.dataset.selectId;
+      state.selectedPoint = null;
+      state.selectedEdge = null;
+      refresh();
     });
     shapeList.addEventListener("dragstart", (event) => {
       const item = event.target.closest(".shape-item[data-array-index]");
@@ -2056,9 +2154,29 @@
 
     svgPreview.addEventListener("pointerdown", (event) => {
       if (event.button === 2) return;
+      const interactiveNode = eventMatches(event, "[data-handle], [data-mid-shape-id], [data-edge-shape-id], [data-shape-id], [data-stack-index]");
+      if (!interactiveNode) {
+        event.preventDefault();
+        svgPreview.setPointerCapture(event.pointerId);
+        state.pan = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          originX: state.camera.x,
+          originY: state.camera.y
+        };
+        state.lastHandleClick = null;
+        state.selectedId = null;
+        state.selectedPoint = null;
+        state.selectedEdge = null;
+        state.hoverMidpoint = null;
+        state.hoverStack = null;
+        refresh();
+        return;
+      }
       if (state.drag?.floating) {
         event.preventDefault();
-        const mergeTarget = event.target.closest("[data-handle]");
+        const mergeTarget = eventMatches(event, "[data-handle]");
         if (mergeTarget && isVertexHandle(mergeTarget.dataset.handle)) {
           const targetShape = state.shapes.find((shape) => shape.id === mergeTarget.dataset.shapeId);
           const targetPoint = targetShape
@@ -2088,7 +2206,7 @@
         refresh();
         return;
       }
-      const stackOptionNode = event.target.closest("[data-stack-index]");
+      const stackOptionNode = eventMatches(event, "[data-stack-index]");
       if (stackOptionNode && state.hoverStack) {
         event.preventDefault();
         const index = Number(stackOptionNode.dataset.stackIndex);
@@ -2133,7 +2251,7 @@
         return;
       }
 
-      const midpointNode = event.target.closest("[data-mid-shape-id]");
+      const midpointNode = eventMatches(event, "[data-mid-shape-id]");
       if (midpointNode) {
         event.preventDefault();
         const shapeId = midpointNode.dataset.midShapeId;
@@ -2162,7 +2280,7 @@
         return;
       }
 
-      const handleNode = event.target.closest("[data-handle]");
+      const handleNode = eventMatches(event, "[data-handle]");
       if (handleNode) {
         event.preventDefault();
         const shapeId = handleNode.dataset.shapeId;
@@ -2184,7 +2302,7 @@
               createdHandle = created?.handle ?? null;
               return shape;
             });
-            if (createdHandle) {
+        if (createdHandle) {
               state.selectedId = shapeId;
               state.selectedPoint = { shapeId, handle: createdHandle };
               state.selectedEdge = null;
@@ -2221,50 +2339,33 @@
         refresh();
         return;
       }
-      const edgeNode = event.target.closest("[data-edge-shape-id]");
-      if (edgeNode) {
-        event.preventDefault();
-        state.lastHandleClick = null;
-        state.selectedId = edgeNode.dataset.edgeShapeId;
-        state.selectedPoint = null;
-        state.selectedEdge = {
-          shapeId: edgeNode.dataset.edgeShapeId,
-          a: Number(edgeNode.dataset.edgeA),
-          b: Number(edgeNode.dataset.edgeB)
-        };
-        state.hoverStack = null;
-        refresh();
-        return;
-      }
-
-      const shapeNode = event.target.closest("[data-shape-id]");
+      const shapeNode = eventMatches(event, "[data-shape-id]") || eventMatches(event, "[data-edge-shape-id]");
       if (shapeNode) {
         event.preventDefault();
         state.lastHandleClick = null;
+        state.selectedId = shapeNode.dataset.shapeId;
         state.hoverMidpoint = null;
         state.hoverStack = null;
-        state.selectedId = shapeNode.dataset.shapeId;
         state.selectedPoint = null;
         state.selectedEdge = null;
+        state.panIntent = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          originX: state.camera.x,
+          originY: state.camera.y,
+          targetShapeId: shapeNode.dataset.shapeId
+        };
         refresh();
         return;
       }
 
-      if (!state.drag) {
-        state.lastHandleClick = null;
-        state.hoverMidpoint = null;
-        state.hoverStack = null;
-        state.selectedId = null;
-        state.selectedPoint = null;
-        state.selectedEdge = null;
-        refresh();
-      }
     });
     svgPreview.addEventListener("contextmenu", (event) => {
-      if (event.target.closest("[data-handle]") || event.target.closest("[data-mid-shape-id]")) {
+      if (eventMatches(event, "[data-handle]") || eventMatches(event, "[data-mid-shape-id]")) {
         return;
       }
-      const shapeNode = event.target.closest("[data-shape-id]");
+      const shapeNode = eventMatches(event, "[data-shape-id]");
       let shapeId = shapeNode?.dataset.shapeId ?? null;
       if (!shapeId) {
         const nearLine = findLineAtPoint(getSvgPoint(event), 14);
@@ -2283,7 +2384,45 @@
       refresh();
       openEditMenuAt(event.clientX, event.clientY);
     });
+    svgPreview.addEventListener("click", (event) => {
+      if (state.suppressNextSvgClick) {
+        event.preventDefault();
+        event.stopPropagation();
+        state.suppressNextSvgClick = false;
+        return;
+      }
+      if (state.panIntent && state.panIntent.pointerId === event.pointerId) {
+        event.preventDefault();
+        event.stopPropagation();
+        state.panIntent = null;
+        return;
+      }
+      const shapeNode = eventMatches(event, "[data-shape-id]") || eventMatches(event, "[data-edge-shape-id]");
+      if (!shapeNode) return;
+      state.selectedId = shapeNode.dataset.shapeId;
+      state.selectedPoint = null;
+      state.selectedEdge = null;
+      refresh();
+    });
     svgPreview.addEventListener("pointermove", (event) => {
+      if (state.panIntent && state.panIntent.pointerId === event.pointerId && !state.pan) {
+        const dx = event.clientX - state.panIntent.startX;
+        const dy = event.clientY - state.panIntent.startY;
+        if ((dx * dx) + (dy * dy) >= 25) {
+          event.preventDefault();
+          svgPreview.setPointerCapture(event.pointerId);
+          state.pan = { ...state.panIntent };
+          state.suppressNextSvgClick = true;
+          state.panIntent = null;
+        }
+      }
+      if (state.pan && state.pan.pointerId === event.pointerId) {
+        event.preventDefault();
+        state.camera.x = Math.round(state.pan.originX + (event.clientX - state.pan.startX));
+        state.camera.y = Math.round(state.pan.originY + (event.clientY - state.pan.startY));
+        refresh();
+        return;
+      }
       if (!state.drag) return;
       updateShapeById(state.drag.shapeId, (shape) => {
         applyHandleMove(shape, state.drag.handle, getSvgPoint(event), event.ctrlKey, state.drag);
@@ -2314,17 +2453,65 @@
       state.hoverMidpoint = hovered ? { shapeId: hovered.shapeId, a: hovered.a, b: hovered.b, key: hovered.key, x: hovered.x, y: hovered.y } : null;
       refresh();
     });
-    window.addEventListener("pointerup", () => {
+    window.addEventListener("pointerup", (event) => {
+      if (state.pan) {
+        try { svgPreview.releasePointerCapture(event.pointerId); } catch {}
+        state.pan = null;
+      }
+      if (state.panIntent && state.panIntent.pointerId === event.pointerId) {
+        state.panIntent = null;
+      }
       if (!state.drag) return;
       if (state.drag.floating) return;
       const merged = tryMergeAtDragEnd();
       state.drag = null;
       state.snapCandidate = null;
-      if (merged) refresh();
-      else refresh();
+      refresh();
     });
+    window.addEventListener("pointercancel", (event) => {
+      if (state.pan) {
+        try { svgPreview.releasePointerCapture(event.pointerId); } catch {}
+        state.pan = null;
+      }
+      if (state.panIntent && state.panIntent.pointerId === event.pointerId) {
+        state.panIntent = null;
+      }
+      state.drag = null;
+      state.snapCandidate = null;
+      refresh();
+    });
+    svgPreview.addEventListener("lostpointercapture", () => {
+      state.pan = null;
+      state.panIntent = null;
+      refresh();
+    });
+    svgPreview.addEventListener("pointerleave", () => {
+      if (state.pan) {
+        state.pan = null;
+        state.panIntent = null;
+        refresh();
+      }
+    });
+    svgPreview.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const rect = svgPreview.getBoundingClientRect();
+      const cursor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      const before = screenToWorld(cursor);
+      const factor = event.deltaY < 0 ? 1.12 : 0.89;
+      const nextZoom = Math.min(6, Math.max(0.2, state.camera.zoom * factor));
+      const anchoredX = cursor.x - (before.x * nextZoom);
+      const anchoredY = cursor.y - (before.y * nextZoom);
+      state.camera.zoom = nextZoom;
+      state.camera.x = Math.round(anchoredX);
+      state.camera.y = Math.round(anchoredY);
+      refresh();
+    }, { passive: false });
 
     $("#addShapeBtn").addEventListener("click", addShape);
+    toggleCreatePanelBtn.addEventListener("click", () => {
+      createPanel.classList.toggle("hidden");
+      syncCreatePanelVisibility();
+    });
     $("#applyEditBtn").addEventListener("click", applyEdits);
     closeEditMenuBtn.addEventListener("click", closeEditMenu);
     window.addEventListener("keydown", (event) => {
@@ -2334,6 +2521,20 @@
       if (editMenu.classList.contains("hidden")) return;
       if (event.target.closest("#editMenu")) return;
       closeEditMenu();
+    });
+    document.addEventListener("pointerdown", (event) => {
+      if (eventMatches(event, "#svgPreview")) return;
+      if (eventMatches(event, "#editMenu")) return;
+      if (eventMatches(event, "#helpPopup")) return;
+      if (event.target.closest("#shapeList")) return;
+      if (eventMatches(event, "button, input, select, textarea, label")) return;
+      state.lastHandleClick = null;
+      state.hoverMidpoint = null;
+      state.hoverStack = null;
+      state.selectedId = null;
+      state.selectedPoint = null;
+      state.selectedEdge = null;
+      refresh();
     });
     helpBtn.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -2403,16 +2604,23 @@
     ["#svgWidth", "#svgHeight", "#gridStep"].forEach((selector) => {
       $(selector).addEventListener("input", () => {
         syncCanvasSettings();
+        fitCameraToCanvas();
         refresh();
       });
       $(selector).addEventListener("change", () => {
         syncCanvasSettings();
+        fitCameraToCanvas();
         refresh();
       });
     });
     ["#toggleGrid", "#toggleRuler", "#toggleCoords", "#togglePoints"].forEach((selector) => {
       $(selector).addEventListener("input", refresh);
       $(selector).addEventListener("change", refresh);
+    });
+    syncCreatePanelVisibility();
+    window.addEventListener("resize", () => {
+      fitCameraToCanvas();
+      refresh();
     });
     window.addEventListener("keydown", (event) => {
       const tag = document.activeElement?.tagName;
@@ -2443,6 +2651,9 @@
 
     syncCreateFieldVisibility();
     syncCanvasSettings();
+    fitCameraToCanvas();
+    if (svgWrap) svgWrap.style.cursor = "default";
+    svgPreview.style.cursor = "default";
     setShapes([
       { id: uid(), type: "rect", x: 90, y: 80, width: 220, height: 140, fill: "#f4b183", stroke: "#8a3d1e", strokeWidth: 3, opacity: 0.75 },
       { id: uid(), type: "circle", cx: 480, cy: 180, r: 90, fill: "#cfe7d0", stroke: "#50794a", strokeWidth: 3, opacity: 0.85 },
